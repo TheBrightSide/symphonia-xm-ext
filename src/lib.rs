@@ -18,7 +18,7 @@ mod tests;
 
 pub struct XmFormat {
     header: XmHeader,
-    patterns: Vec<(XmPatternHeader, Vec<XmPatternNote>)>,
+    patterns: Vec<(XmPatternHeader, Vec<XmPatternSlot>)>,
     instruments: Vec<(XmInstrument, Vec<(XmSampleHeader, XmSampleData)>)>,
 }
 
@@ -50,7 +50,7 @@ pub struct XmPatternHeader {
     packed_data_size: u16,
 }
 
-pub struct XmPatternRow(pub Vec<XmPatternNote>);
+pub struct XmPatternRow(pub Vec<XmPatternSlot>);
 
 pub struct XmPatternRows(pub Vec<XmPatternRow>);
 
@@ -66,7 +66,7 @@ pub struct XmNoteFlags {
     __: u8,
 }
 
-pub struct XmPatternNote {
+pub struct XmPatternSlot {
     note: note::XmNote,
     instrument: Option<XmInstrument>,
     volume_column: Option<effect::XmVolumeColumn>,
@@ -290,7 +290,7 @@ fn parse_xm_pattern_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmPatternHe
     ))
 }
 
-fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternNote> {
+fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
     let (input, note_or_flags) = nom::number::complete::u8(data)?;
     let is_flags = ((note_or_flags & (0x1 << 7)) >> 7) == 1;
 
@@ -319,7 +319,7 @@ fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternNote>
 
         Ok((
             input,
-            XmPatternNote {
+            XmPatternSlot {
                 note,
                 instrument: None,
                 volume_column,
@@ -338,7 +338,7 @@ fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternNote>
 
         Ok((
             input,
-            XmPatternNote {
+            XmPatternSlot {
                 note,
                 instrument: None,
                 volume_column: Some(volume_column),
@@ -373,7 +373,7 @@ fn parse_xm_pattern<'a>(
     }
 }
 
-impl std::fmt::Display for XmPatternNote {
+impl std::fmt::Display for XmPatternSlot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // TODO: add the rest
         let effect_fmt = match self.effect {
