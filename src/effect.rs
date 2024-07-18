@@ -1,5 +1,5 @@
 use bitfield_struct::bitfield;
-use nom::{error::ParseError, IResult};
+use nom::{combinator::cond, error::ParseError, sequence::tuple, IResult};
 
 // TODO: convert this to an enum
 pub struct XmEffectWord(pub(crate) u8);
@@ -61,62 +61,78 @@ pub enum XmEffect {
     Panbrello(DoubleU4),                 // Y 0x22(xy) NOTE: ModPlug hack
     MidiMacro(u8),                       // Z 0x23(xx) NOTE: ModPlug hack
     SmoothMidiMacro(u8),                 // \ 0x24(xx) NOTE: ModPlug hack
-    Unknown(u8),
 }
 
-impl XmEffect {
-    pub fn new(command: u8, argument: u8) -> Self {
-        let high_ord_nibble_arg = argument >> 4;
+pub fn parse_xm_effect<'a>(effect_type_follows: bool, effect_parameter_follows: bool) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Option<XmEffect>> {
+    move |data| {
+        let (input, (command, parameter)) = tuple((
+            cond(effect_type_follows, nom::number::complete::u8),
+            cond(effect_parameter_follows, nom::number::complete::u8),
+        ))(data)?;
 
-        match (command, argument, high_ord_nibble_arg) {
-            (0x00, a, _) => XmEffect::Arpeggio(DoubleU4(a)), // 0 0x00(xy)
-            (0x01, a, _) => XmEffect::PortamentoUp(a),       // 1 0x01(xx)
-            (0x02, a, _) => XmEffect::PortamentoDown(a),     // 2 0x02(xx)
-            (0x03, a, _) => XmEffect::TonePortamento(a),     // 3 0x03(xx)
-            (0x04, a, _) => XmEffect::Vibrato(DoubleU4(a)),  // 4 0x04(xy)
-            (0x05, a, _) => XmEffect::VolumeSlideTonePortamento(DoubleU4(a)), // 5 0x05(xy)
-            (0x06, a, _) => XmEffect::VolumeSlideVibrato(DoubleU4(a)), // 6 0x06(xy)
-            (0x07, a, _) => XmEffect::Tremolo(DoubleU4(a)),  // 7 0x07(xy)
-            (0x08, a, _) => XmEffect::SetPanningFine(a),     // 8 0x08(xx)
-            (0x09, a, _) => XmEffect::SampleOffset(a),       // 9 0x09(xx)
-            (0x0A, a, _) => XmEffect::VolumeSlide(DoubleU4(a)), // A 0x0A(xy)
-            (0x0B, a, _) => XmEffect::PositionJump(a),       // B 0x0B(xx)
-            (0x0C, a, _) => XmEffect::SetVolume(a),          // C 0x0C(xx)
-            (0x0D, a, _) => XmEffect::PatternBreak(a),       // D 0x0D(xx)
-            (0x0E, a, 0x1) => XmEffect::FinePortamentoUp(a & 0b1111), // E 0x0E(1x)
-            (0x0E, a, 0x2) => XmEffect::FinePortamentoDown(a & 0b1111), // E 0x0E(2x)
-            (0x0E, a, 0x3) => XmEffect::GlissandoControl(a & 0b1111), // E 0x0E(3x)
-            (0x0E, a, 0x4) => XmEffect::SetVibratoWaveform(a & 0b1111), // E 0x0E(4x)
-            (0x0E, a, 0x5) => XmEffect::SetFinetune(a & 0b1111), // E 0x0E(5x)
-            (0x0E, 0x60, _) => XmEffect::PatternLoopStart,   // E 0x0E(60)
-            (0x0E, a, 0x6) => XmEffect::PatternLoop(a & 0b1111), // E 0x0E(6x)
-            (0x0E, a, 0x7) => XmEffect::SetTremoloWaveform(a & 0b1111), // E 0x0E(7x)
-            (0x0E, a, 0x8) => XmEffect::SetPanning(a & 0b1111), // E 0x0E(8x)
-            (0x0E, a, 0x9) => XmEffect::Retrigger(a & 0b1111), // E 0x0E(9x)
-            (0x0E, a, 0xa) => XmEffect::FineVolumeSlideUp(a & 0b1111), // E 0x0E(Ax)
-            (0x0E, a, 0xb) => XmEffect::FineVolumeSlideDown(a & 0b1111), // E 0x0E(Bx)
-            (0x0E, a, 0xc) => XmEffect::NoteCut(a & 0b1111), // E 0x0E(Cx)
-            (0x0E, a, 0xd) => XmEffect::NoteDelay(a & 0b1111), // E 0x0E(Dx)
-            (0x0E, a, 0xe) => XmEffect::PatternDelay(a & 0b1111), // E 0x0E(Ex)
-            (0x0E, a, 0xf) => XmEffect::SetActiveMacro(a & 0b1111), // E 0x0E(Fx) NOTE: ModPlug hack
-            (0x0F, a, _) => XmEffect::SetTempo(a),           // F 0x0F(xx)
-            (0x10, a, _) => XmEffect::SetGlobalVolume(a),    // G 0x10(xx)
-            (0x11, a, _) => XmEffect::GlobalVolumeSlide(DoubleU4(a)), // H 0x11(xy)
-            (0x14, a, _) => XmEffect::KeyOff(a),             // K 0x14(xx)
-            (0x15, a, _) => XmEffect::SetEnvelopePosition(a), // L 0x15(xx)
-            (0x19, a, _) => XmEffect::PanningSlide(DoubleU4(a)), // P 0x19(xy)
-            (0x1B, a, _) => XmEffect::RetriggerWithVolume(DoubleU4(a)), // R 0x1B(xy)
-            (0x1D, a, _) => XmEffect::Tremor(DoubleU4(a)),   // T 0x1D(xy)
-            (0x21, a, 0x1) => XmEffect::ExtraFinePortamentoUp(a & 0b1111), // X 0x21(1x) NOTE: ModPlug hack
-            (0x21, a, 0x2) => XmEffect::ExtraFinePortamentoDown(a & 0b1111), // X 0x21(2x) NOTE: ModPlug hack
-            (0x21, a, 0x5) => XmEffect::SetPanbrelloWaveform(a & 0b1111), // X 0x21(5x) NOTE: ModPlug hack
-            (0x21, a, 0x6) => XmEffect::FinePatternDelay(a & 0b1111), // X 0x21(6x) NOTE: ModPlug hack
-            (0x21, a, 0x9) => XmEffect::SoundControl(a & 0b1111), // X 0x21(9x) NOTE: ModPlug hack
-            (0x21, a, 0xa) => XmEffect::HighOffset(a & 0b1111),   // X 0x21(Ax) NOTE: ModPlug hack
-            (0x22, a, _) => XmEffect::Panbrello(DoubleU4(a)),     // Y 0x22(xy) NOTE: ModPlug hack
-            (0x23, a, _) => XmEffect::MidiMacro(a),               // Z 0x23(xx) NOTE: ModPlug hack
-            (0x24, a, _) => XmEffect::SmoothMidiMacro(a),         // \ 0x24(xx) NOTE: ModPlug hack
-            (_, a, _) => XmEffect::Unknown(a),
+        let Some((command, parameter)) = (match (command, parameter) {
+            (Some(c), Some(p)) => Some((c, p)),
+            (Some(c), None) => Some((c, 0)),
+            (None, Some(c)) => Some((0, c)),
+            (None, None) => None,
+        }) else {
+            return Ok((input, None))
+        };
+
+        let high_ord_nibble_arg = parameter >> 4;
+
+        match (command, parameter, high_ord_nibble_arg) {
+            (0x00, a, _) => Ok((input, Some(XmEffect::Arpeggio(DoubleU4(a))))), // 0 0x00(xy)
+            (0x01, a, _) => Ok((input, Some(XmEffect::PortamentoUp(a)))),       // 1 0x01(xx)
+            (0x02, a, _) => Ok((input, Some(XmEffect::PortamentoDown(a)))),     // 2 0x02(xx)
+            (0x03, a, _) => Ok((input, Some(XmEffect::TonePortamento(a)))),     // 3 0x03(xx)
+            (0x04, a, _) => Ok((input, Some(XmEffect::Vibrato(DoubleU4(a))))),  // 4 0x04(xy)
+            (0x05, a, _) => Ok((input, Some(XmEffect::VolumeSlideTonePortamento(DoubleU4(a))))), // 5 0x05(xy)
+            (0x06, a, _) => Ok((input, Some(XmEffect::VolumeSlideVibrato(DoubleU4(a))))), // 6 0x06(xy)
+            (0x07, a, _) => Ok((input, Some(XmEffect::Tremolo(DoubleU4(a))))),  // 7 0x07(xy)
+            (0x08, a, _) => Ok((input, Some(XmEffect::SetPanningFine(a)))),     // 8 0x08(xx)
+            (0x09, a, _) => Ok((input, Some(XmEffect::SampleOffset(a)))),       // 9 0x09(xx)
+            (0x0A, a, _) => Ok((input, Some(XmEffect::VolumeSlide(DoubleU4(a))))), // A 0x0A(xy)
+            (0x0B, a, _) => Ok((input, Some(XmEffect::PositionJump(a)))),       // B 0x0B(xx)
+            (0x0C, a, _) => Ok((input, Some(XmEffect::SetVolume(a)))),          // C 0x0C(xx)
+            (0x0D, a, _) => Ok((input, Some(XmEffect::PatternBreak(a)))),       // D 0x0D(xx)
+            (0x0E, a, 0x1) => Ok((input, Some(XmEffect::FinePortamentoUp(a & 0b1111)))), // E 0x0E(1x)
+            (0x0E, a, 0x2) => Ok((input, Some(XmEffect::FinePortamentoDown(a & 0b1111)))), // E 0x0E(2x)
+            (0x0E, a, 0x3) => Ok((input, Some(XmEffect::GlissandoControl(a & 0b1111)))), // E 0x0E(3x)
+            (0x0E, a, 0x4) => Ok((input, Some(XmEffect::SetVibratoWaveform(a & 0b1111)))), // E 0x0E(4x)
+            (0x0E, a, 0x5) => Ok((input, Some(XmEffect::SetFinetune(a & 0b1111)))), // E 0x0E(5x)
+            (0x0E, 0x60, _) => Ok((input, Some(XmEffect::PatternLoopStart))),   // E 0x0E(60)
+            (0x0E, a, 0x6) => Ok((input, Some(XmEffect::PatternLoop(a & 0b1111)))), // E 0x0E(6x)
+            (0x0E, a, 0x7) => Ok((input, Some(XmEffect::SetTremoloWaveform(a & 0b1111)))), // E 0x0E(7x)
+            (0x0E, a, 0x8) => Ok((input, Some(XmEffect::SetPanning(a & 0b1111)))), // E 0x0E(8x)
+            (0x0E, a, 0x9) => Ok((input, Some(XmEffect::Retrigger(a & 0b1111)))), // E 0x0E(9x)
+            (0x0E, a, 0xa) => Ok((input, Some(XmEffect::FineVolumeSlideUp(a & 0b1111)))), // E 0x0E(Ax)
+            (0x0E, a, 0xb) => Ok((input, Some(XmEffect::FineVolumeSlideDown(a & 0b1111)))), // E 0x0E(Bx)
+            (0x0E, a, 0xc) => Ok((input, Some(XmEffect::NoteCut(a & 0b1111)))), // E 0x0E(Cx)
+            (0x0E, a, 0xd) => Ok((input, Some(XmEffect::NoteDelay(a & 0b1111)))), // E 0x0E(Dx)
+            (0x0E, a, 0xe) => Ok((input, Some(XmEffect::PatternDelay(a & 0b1111)))), // E 0x0E(Ex)
+            (0x0E, a, 0xf) => Ok((input, Some(XmEffect::SetActiveMacro(a & 0b1111)))), // E 0x0E(Fx) NOTE: ModPlug hack
+            (0x0F, a, _) => Ok((input, Some(XmEffect::SetTempo(a)))),           // F 0x0F(xx)
+            (0x10, a, _) => Ok((input, Some(XmEffect::SetGlobalVolume(a)))),    // G 0x10(xx)
+            (0x11, a, _) => Ok((input, Some(XmEffect::GlobalVolumeSlide(DoubleU4(a))))), // H 0x11(xy)
+            (0x14, a, _) => Ok((input, Some(XmEffect::KeyOff(a)))),             // K 0x14(xx)
+            (0x15, a, _) => Ok((input, Some(XmEffect::SetEnvelopePosition(a)))), // L 0x15(xx)
+            (0x19, a, _) => Ok((input, Some(XmEffect::PanningSlide(DoubleU4(a))))), // P 0x19(xy)
+            (0x1B, a, _) => Ok((input, Some(XmEffect::RetriggerWithVolume(DoubleU4(a))))), // R 0x1B(xy)
+            (0x1D, a, _) => Ok((input, Some(XmEffect::Tremor(DoubleU4(a))))),   // T 0x1D(xy)
+            (0x21, a, 0x1) => Ok((input, Some(XmEffect::ExtraFinePortamentoUp(a & 0b1111)))), // X 0x21(1x) NOTE: ModPlug hack
+            (0x21, a, 0x2) => Ok((input, Some(XmEffect::ExtraFinePortamentoDown(a & 0b1111)))), // X 0x21(2x) NOTE: ModPlug hack
+            (0x21, a, 0x5) => Ok((input, Some(XmEffect::SetPanbrelloWaveform(a & 0b1111)))), // X 0x21(5x) NOTE: ModPlug hack
+            (0x21, a, 0x6) => Ok((input, Some(XmEffect::FinePatternDelay(a & 0b1111)))), // X 0x21(6x) NOTE: ModPlug hack
+            (0x21, a, 0x9) => Ok((input, Some(XmEffect::SoundControl(a & 0b1111)))), // X 0x21(9x) NOTE: ModPlug hack
+            (0x21, a, 0xa) => Ok((input, Some(XmEffect::HighOffset(a & 0b1111)))),   // X 0x21(Ax) NOTE: ModPlug hack
+            (0x22, a, _) => Ok((input, Some(XmEffect::Panbrello(DoubleU4(a))))),     // Y 0x22(xy) NOTE: ModPlug hack
+            (0x23, a, _) => Ok((input, Some(XmEffect::MidiMacro(a)))),               // Z 0x23(xx) NOTE: ModPlug hack
+            (0x24, a, _) => Ok((input, Some(XmEffect::SmoothMidiMacro(a)))),         // \ 0x24(xx) NOTE: ModPlug hack
+            (_, a, _) => Err(nom::Err::Error(nom::error::Error::from_error_kind(
+                data,
+                nom::error::ErrorKind::Verify,
+            ))),
         }
     }
 }
@@ -171,7 +187,6 @@ impl std::fmt::Display for XmEffect {
             XmEffect::Panbrello(a) => write!(f, "Y{:02X}", a.into_bits()),
             XmEffect::MidiMacro(a) => write!(f, "Z{:02X}", a),
             XmEffect::SmoothMidiMacro(a) => write!(f, "\\{:02X}", a),
-            XmEffect::Unknown(a) => write!(f, "_{:02X}", a),
         }
     }
 }

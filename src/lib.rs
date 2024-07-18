@@ -70,12 +70,11 @@ pub struct XmPatternSlot {
     note: note::XmNote,
     instrument: Option<XmInstrument>,
     volume_column: Option<effect::XmVolumeColumn>,
-    effect: Option<effect::XmEffect>
+    effect: Option<effect::XmEffect>,
 }
 
-/// volume panning vibrato type
 #[bitfield(u8)]
-pub struct XmVpvType {
+pub struct XmEnvelopeType {
     on: bool,
     sustain: bool,
     loop_: bool,
@@ -84,56 +83,120 @@ pub struct XmVpvType {
     __: u8,
 }
 
-pub struct XmEnvelopePoint {
-    x: u16,
-    y: u16,
+#[derive(Debug)]
+pub enum XmVibratoType {
+    Sine,
+    Square,
+    RampUp,
+    RampDown,
 }
 
+#[derive(Default, Debug)]
+pub struct XmEnvelopePoint {
+    frame: u16,
+    value: u16,
+}
+
+#[derive(Debug)]
 pub struct XmEnvelope {
     points: Vec<XmEnvelopePoint>,
-    sustain_point: u8,
-    loop_start_point: u8,
-    loop_end_point: u8,
-    kind: XmVpvType,
+    sustain_point: Option<u8>,
+    loop_start_point: Option<u8>,
+    loop_end_point: Option<u8>,
 }
 
+#[derive(Debug)]
 pub struct XmVibratoOpts {
-    vibrato_type: XmVpvType,
+    vibrato_type: XmVibratoType,
     vibrato_sweep: u8,
     vibrato_depth: u8,
     vibrato_rate: u8,
 }
 
+#[derive(Debug)]
 pub struct XmInstrumentSampleOpts {
     sample_header_size: u32,
     sample_keymap_assignments: [u8; 96],
-    volume_envelope: XmEnvelope,
-    panning_envelope: XmEnvelope,
+    volume_envelope: Option<XmEnvelope>,
+    panning_envelope: Option<XmEnvelope>,
     vibrato: XmVibratoOpts,
     volume_fadeout: u16,
 }
 
+#[derive(Debug)]
 pub struct XmInstrument {
-    size: u32,
+    header_size: u32,
     name: String,
     kind: u8,
     samples_num: u16,
     sample_opts: Option<XmInstrumentSampleOpts>,
 }
 
-// TODO: enumify
+#[repr(u8)]
+#[derive(Debug)]
+pub enum XmSampleLoopType {
+    NoLoop,
+    ForwardLoop,
+    BidirectionalLoop,
+    Unknown,
+}
+
+impl XmSampleLoopType {
+    const fn from_bits(value: u8) -> Self {
+        match value {
+            0 => XmSampleLoopType::NoLoop,
+            1 => XmSampleLoopType::ForwardLoop,
+            2 => XmSampleLoopType::BidirectionalLoop,
+            _ => XmSampleLoopType::Unknown,
+        }
+    }
+
+    const fn into_bits(self) -> u8 {
+        self as _
+    }
+}
+
+#[repr(u8)]
+#[derive(Debug)]
+pub enum XmSampleBitRate {
+    Bit8,
+    Bit16,
+    Unknown,
+}
+
+impl XmSampleBitRate {
+    const fn from_bits(value: u8) -> Self {
+        match value {
+            0 => XmSampleBitRate::Bit8,
+            1 => XmSampleBitRate::Bit16,
+            _ => XmSampleBitRate::Unknown,
+        }
+    }
+
+    const fn into_bits(self) -> u8 {
+        self as _
+    }
+}
+
 #[bitfield(u8)]
 pub struct XmSampleType {
-    forward_loop: bool,
-    backward_loop: bool,
+    #[bits(2)]
+    loop_type: XmSampleLoopType,
 
     #[bits(2)]
     __: u8,
 
-    is_16_or_8_bit: bool,
+    #[bits(1)]
+    bitrate: XmSampleBitRate,
 
     #[bits(3)]
     __: u8,
+}
+
+#[repr(u8)]
+pub enum XmSampleDataKind {
+    RegularDelta = 0x00,
+    ADPCM4Bit = 0xAD,
 }
 
 pub struct XmSampleHeader {
@@ -145,7 +208,7 @@ pub struct XmSampleHeader {
     kind: XmSampleType,
     panning: u8,
     relative_note_num: i8,
-    data_kind: u8,
+    data_kind: XmSampleDataKind,
     name: String,
 }
 
@@ -181,7 +244,194 @@ fn fixed_length_string<'a>(length: usize) -> impl FnMut(&'a [u8]) -> IResult<&'a
     }
 }
 
-fn parse_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmHeader, String, u8, u32)> {
+fn parse_xm_envelope_point<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmEnvelopePoint> {
+    let (input, (x, y)) =
+        tuple((nom::number::complete::le_u16, nom::number::complete::le_u16))(data)?;
+
+    Ok((input, XmEnvelopePoint { frame: x, value: y }))
+}
+
+fn parse_xm_envelope_points<'a>(
+    length: usize,
+) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Vec<XmEnvelopePoint>> {
+    nom::multi::count(parse_xm_envelope_point, length)
+}
+
+fn parse_xm_envelope_type<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmEnvelopeType> {
+    let (input, byte) = nom::number::complete::u8(data)?;
+
+    Ok((input, XmEnvelopeType(byte)))
+}
+
+fn parse_xm_vibrato_type<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVibratoType> {
+    let (input, byte) = nom::number::complete::u8(data)?;
+
+    match byte {
+        0 => Ok((input, XmVibratoType::Sine)),
+        1 => Ok((input, XmVibratoType::Square)),
+        2 => Ok((input, XmVibratoType::RampDown)),
+        3 => Ok((input, XmVibratoType::RampUp)),
+        _ => Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            input,
+            nom::error::ErrorKind::Verify,
+        ))),
+    }
+}
+
+fn parse_xm_vibrato_opts<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVibratoOpts> {
+    let (input, (vibrato_type, vibrato_sweep, vibrato_depth, vibrato_rate)) = tuple((
+        parse_xm_vibrato_type,
+        nom::number::complete::u8,
+        nom::number::complete::u8,
+        nom::number::complete::u8,
+    ))(data)?;
+
+    Ok((
+        input,
+        XmVibratoOpts {
+            vibrato_type,
+            vibrato_sweep,
+            vibrato_depth,
+            vibrato_rate,
+        },
+    ))
+}
+
+fn parse_xm_instrument_sample_opts<'a>(
+    data: &'a [u8],
+) -> IResult<&'a [u8], XmInstrumentSampleOpts> {
+    let (
+        input,
+        (
+            sample_header_size,
+            sample_keymap_assignments,
+            mut vol_envelope_points,
+            mut pan_envelope_points,
+            vol_points_num,
+            pan_points_num,
+            vol_sustain_point,
+            vol_loop_start_point,
+            vol_loop_end_point,
+            pan_sustain_point,
+            pan_loop_start_point,
+            pan_loop_end_point,
+            vol_type,
+            pan_type,
+            vibrato_opts,
+            volume_fadeout,
+            _reserved,
+        ),
+    ) = tuple((
+        nom::number::complete::le_u32,       // Sample header size
+        nom::bytes::complete::take(96usize), // Sample keymap assignments
+        parse_xm_envelope_points(12),        // Points for volume envelope
+        parse_xm_envelope_points(12),        // Points for panning envelope
+        nom::number::complete::u8,           // Number of volume points
+        nom::number::complete::u8,           // Number of panning points
+        nom::number::complete::u8,           // Volume sustain point
+        nom::number::complete::u8,           // Volume loop start point
+        nom::number::complete::u8,           // Volume loop end point
+        nom::number::complete::u8,           // Panning sustain point
+        nom::number::complete::u8,           // Panning loop start point
+        nom::number::complete::u8,           // Panning loop end point
+        parse_xm_envelope_type,              // Volume type
+        parse_xm_envelope_type,              // Panning type
+        parse_xm_vibrato_opts,               // Vibrato options
+        nom::number::complete::le_u16,       // Volume fadeout
+        nom::bytes::complete::take(22usize), // Reserved data
+    ))(data)?;
+
+    let sample_keymap_assignments = <[u8; 96]>::try_from(sample_keymap_assignments)
+        .expect("size of the sample keymap assignments should always be 96");
+
+    if vol_points_num > 12 || pan_points_num > 12 {
+        return Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
+
+    vol_envelope_points.resize_with(vol_points_num as usize, Default::default);
+    pan_envelope_points.resize_with(pan_points_num as usize, Default::default);
+
+    Ok((
+        input,
+        XmInstrumentSampleOpts {
+            sample_header_size,
+            sample_keymap_assignments,
+            volume_envelope: if vol_type.on() {
+                Some(XmEnvelope {
+                    points: vol_envelope_points,
+                    sustain_point: if vol_type.sustain() {
+                        Some(vol_sustain_point)
+                    } else {
+                        None
+                    },
+                    loop_start_point: if vol_type.loop_() {
+                        Some(vol_loop_start_point)
+                    } else {
+                        None
+                    },
+                    loop_end_point: if vol_type.loop_() {
+                        Some(vol_loop_end_point)
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            },
+            panning_envelope: if pan_type.on() {
+                Some(XmEnvelope {
+                    points: pan_envelope_points,
+                    sustain_point: if pan_type.sustain() {
+                        Some(pan_sustain_point)
+                    } else {
+                        None
+                    },
+                    loop_start_point: if pan_type.loop_() {
+                        Some(pan_loop_start_point)
+                    } else {
+                        None
+                    },
+                    loop_end_point: if pan_type.loop_() {
+                        Some(pan_loop_end_point)
+                    } else {
+                        None
+                    },
+                })
+            } else {
+                None
+            },
+            vibrato: vibrato_opts,
+            volume_fadeout,
+        },
+    ))
+}
+
+fn parse_xm_instrument<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstrument> {
+    let (input, (header_size, name, kind, samples_num)) = tuple((
+        nom::number::complete::le_u32,
+        fixed_length_string(22),
+        nom::number::complete::u8,
+        nom::number::complete::le_u16,
+    ))(data)?;
+
+    let (input, sample_opts) = cond(samples_num > 0, parse_xm_instrument_sample_opts)(input)?;
+
+    Ok((
+        input,
+        XmInstrument {
+            header_size,
+            name,
+            kind,
+            samples_num,
+            sample_opts,
+        },
+    ))
+}
+
+fn parse_xm_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmHeader, String, u8, u32)> {
     let (
         input,
         (
@@ -242,7 +492,7 @@ fn parse_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmHeader, String, u8, 
     ))
 }
 
-fn parse_pattern_order_table_raw<'a>(
+fn parse_xm_pattern_order_table_raw<'a>(
     data: &'a [u8],
     length: usize,
     size: usize,
@@ -290,32 +540,24 @@ fn parse_xm_pattern_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmPatternHe
     ))
 }
 
-fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
+fn parse_xm_pattern_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
     let (input, note_or_flags) = nom::number::complete::u8(data)?;
     let is_flags = ((note_or_flags & (0x1 << 7)) >> 7) == 1;
 
     if is_flags {
         let flags = XmNoteFlags(note_or_flags);
 
-        let (input, (note, instrument, volume_column, effect_type, effect_parameter)) =
-            tuple((
-                cond(flags.note_follows(), note::parse_xm_note)
-                    .map(|e| e.unwrap_or(note::XmNote::NoNote)),
-                cond(flags.instrument_follows(), nom::number::complete::u8),
-                cond(
-                    flags.volume_column_byte_follows(),
-                    parse_xm_volume_column,
-                ),
-                cond(flags.effect_type_follows(), nom::number::complete::u8),
-                cond(flags.effect_parameter_follows(), nom::number::complete::u8),
-            ))(input)?;
+        let (input, (note, instrument, volume_column)) = tuple((
+            cond(flags.note_follows(), note::parse_xm_note)
+                .map(|e| e.unwrap_or(note::XmNote::NoNote)),
+            cond(flags.instrument_follows(), nom::number::complete::u8),
+            cond(flags.volume_column_byte_follows(), parse_xm_volume_column),
+        ))(input)?;
 
-        let effect = match (effect_type, effect_parameter) {
-            (Some(c), Some(a)) => Some(effect::XmEffect::new(c, a)),
-            (Some(c), None) => Some(effect::XmEffect::new(c, 0)),
-            (None, Some(c)) => Some(effect::XmEffect::new(0, c)),
-            (None, None) => None,
-        };
+        let (input, effect) = effect::parse_xm_effect(
+            flags.effect_type_follows(),
+            flags.effect_parameter_follows(),
+        )(input)?;
 
         Ok((
             input,
@@ -323,18 +565,16 @@ fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot>
                 note,
                 instrument: None,
                 volume_column,
-                effect
+                effect,
             },
         ))
     } else {
-        let (input, (note, instrument, volume_column, effect_command, effect_parameter)) =
-            tuple((
-                note::parse_xm_note,
-                nom::number::complete::u8,
-                parse_xm_volume_column,
-                nom::number::complete::u8,
-                nom::number::complete::u8,
-            ))(data)?;
+        let (input, (note, instrument, volume_column, effect)) = tuple((
+            note::parse_xm_note,
+            nom::number::complete::u8,
+            parse_xm_volume_column,
+            effect::parse_xm_effect(true, true),
+        ))(data)?;
 
         Ok((
             input,
@@ -342,7 +582,7 @@ fn parse_xm_pattern_note<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot>
                 note,
                 instrument: None,
                 volume_column: Some(volume_column),
-                effect: Some(effect::XmEffect::new(effect_command, effect_parameter))
+                effect,
             },
         ))
     }
@@ -352,7 +592,7 @@ fn parse_xm_pattern_row<'a>(
     channels_num: u16,
 ) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], XmPatternRow> {
     move |data| {
-        nom::multi::count(parse_xm_pattern_note, channels_num as usize)
+        nom::multi::count(parse_xm_pattern_slot, channels_num as usize)
             .map(|e| XmPatternRow(e))
             .parse(data)
     }
@@ -378,7 +618,7 @@ impl std::fmt::Display for XmPatternSlot {
         // TODO: add the rest
         let effect_fmt = match self.effect {
             Some(ref v) => format!("{}", v),
-            None => "...".to_owned()
+            None => "...".to_owned(),
         };
 
         let volume_col_fmt = match self.volume_column {

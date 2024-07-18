@@ -8,7 +8,7 @@ To try out the parser, try messing around with the only test in [tests.rs](/src/
 The following features are implemented:
 - [x] Parsing of header
 - [x] Parsing of pattern data
-- [ ] Parsing of instrument data
+- [x] Parsing of instrument data
 - [ ] Parsing of sample data
 - [ ] Unit tests
 - [ ] Demuxing samples
