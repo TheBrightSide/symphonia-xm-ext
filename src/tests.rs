@@ -15,12 +15,12 @@ fn test_parse_xm_header_first() {
     )(input)
     .unwrap();
 
-    let (input, instrument) = header::parse(input).unwrap();
+    // let (input, instrument) = instrument::parse_h(input).unwrap();
 
     println!("{:#?}", header);
     println!("{:?}", pattern_order_table_raw);
 
-    println!("{:#?}", instrument);
+    // println!("{:#?}", instrument);
 
     // for pattern in patterns.iter() {
     //     println!("{}", pattern.1);
