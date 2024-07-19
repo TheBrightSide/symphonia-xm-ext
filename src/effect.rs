@@ -7,10 +7,10 @@ pub struct XmEffectWord(pub(crate) u8);
 #[bitfield(u8, order = Lsb)]
 pub struct DoubleU4 {
     #[bits(4)]
-    x: u8,
+    pub x: u8,
 
     #[bits(4)]
-    y: u8,
+    pub y: u8,
 }
 
 pub enum XmEffect {
@@ -63,7 +63,39 @@ pub enum XmEffect {
     SmoothMidiMacro(u8),                 // \ 0x24(xx) NOTE: ModPlug hack
 }
 
-pub fn parse_xm_effect<'a>(effect_type_follows: bool, effect_parameter_follows: bool) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Option<XmEffect>> {
+pub struct XmVolumeColumn(u8);
+
+#[repr(u8)]
+pub enum XmVolumeColumnCommand {
+    SetVolume,       // 0x00..0x50 axx
+    VolumeSlideUp,   // 0x60..0x6F bxx
+    VolumeSlideDown, // 0x70..0x7F cxx
+    FineVolumeDown,  // 0x80..0x8F dxx
+    FineVolumeUp,    // 0x90..0x9F gxx
+    VibratoSpeed,    // 0xA0..0xAF hxx
+    VibratoDepth,    // 0xB0..0xBF lxx
+    SetPanning,      // 0xC0..0xCF pxx
+    PanSlideLeft,    // 0xD0..0xDF rxx
+    PanSlideRight,   // 0xE0..0xEF uxx
+    TonePortamento,  // 0xF0..0xFF vxx
+    Unknown,
+}
+
+pub(crate) fn parse_volume_column<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVolumeColumn> {
+    let (input, byte) = nom::number::complete::u8(data)?;
+    let byte = XmVolumeColumn::from(byte);
+
+    if let XmVolumeColumnCommand::Unknown = byte.command() {
+        Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            data,
+            nom::error::ErrorKind::Verify,
+        )))
+    } else {
+        Ok((input, byte))
+    }
+}
+
+pub(crate) fn parse_effect<'a>(effect_type_follows: bool, effect_parameter_follows: bool) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Option<XmEffect>> {
     move |data| {
         let (input, (command, parameter)) = tuple((
             cond(effect_type_follows, nom::number::complete::u8),
@@ -191,22 +223,6 @@ impl std::fmt::Display for XmEffect {
     }
 }
 
-#[repr(u8)]
-pub enum XmVolumeColumnCommand {
-    SetVolume,       // 0x00..0x50 axx
-    VolumeSlideUp,   // 0x60..0x6F bxx
-    VolumeSlideDown, // 0x70..0x7F cxx
-    FineVolumeDown,  // 0x80..0x8F dxx
-    FineVolumeUp,    // 0x90..0x9F gxx
-    VibratoSpeed,    // 0xA0..0xAF hxx
-    VibratoDepth,    // 0xB0..0xBF lxx
-    SetPanning,      // 0xC0..0xCF pxx
-    PanSlideLeft,    // 0xD0..0xDF rxx
-    PanSlideRight,   // 0xE0..0xEF uxx
-    TonePortamento,  // 0xF0..0xFF vxx
-    Unknown,
-}
-
 impl XmVolumeColumnCommand {
     const fn into_bits(self) -> u8 {
         self as _
@@ -229,8 +245,6 @@ impl XmVolumeColumnCommand {
         }
     }
 }
-
-pub struct XmVolumeColumn(u8);
 
 impl From<u8> for XmVolumeColumn {
     fn from(value: u8) -> Self {
@@ -268,20 +282,6 @@ impl XmVolumeColumn {
 
     fn command_raw(&self) -> u8 {
         (self.0 & 0b1111_0000) >> 4
-    }
-}
-
-pub fn parse_xm_volume_column<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVolumeColumn> {
-    let (input, byte) = nom::number::complete::u8(data)?;
-    let byte = XmVolumeColumn::from(byte);
-
-    if let XmVolumeColumnCommand::Unknown = byte.command() {
-        Err(nom::Err::Error(nom::error::Error::from_error_kind(
-            data,
-            nom::error::ErrorKind::Verify,
-        )))
-    } else {
-        Ok((input, byte))
     }
 }
 
