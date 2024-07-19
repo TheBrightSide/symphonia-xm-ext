@@ -1,5 +1,5 @@
-use std::rc::Rc;
 use crate::{effect, fixed_length_string, instrument, note};
+use std::rc::Rc;
 
 use bitfield_struct::bitfield;
 use nom::{error::ParseError, sequence::tuple, IResult, Parser};
@@ -96,7 +96,10 @@ fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
             nom::combinator::cond(flags.note_follows(), note::parse_xm_note)
                 .map(|e| e.unwrap_or(note::XmNote::NoNote)),
             nom::combinator::cond(flags.instrument_follows(), nom::number::complete::u8),
-            nom::combinator::cond(flags.volume_column_byte_follows(), effect::parse_volume_column),
+            nom::combinator::cond(
+                flags.volume_column_byte_follows(),
+                effect::parse_volume_column,
+            ),
         ))(input)?;
 
         let (input, effect) = effect::parse_effect(
@@ -133,9 +136,7 @@ fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
     }
 }
 
-fn parse_row<'a>(
-    channels_num: u16,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], XmPatternRow> {
+fn parse_row<'a>(channels_num: u16) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], XmPatternRow> {
     move |data| {
         nom::multi::count(parse_slot, channels_num as usize)
             .map(|e| XmPatternRow(e))
@@ -149,10 +150,9 @@ pub(crate) fn parse<'a>(
     move |data| {
         let (input, (header, excess)) = parse_header(data)?;
 
-        let (input, notes) =
-            nom::multi::count(parse_row(channels_num), header.rows_num as usize)
-                .map(|e| XmPatternRows(e))
-                .parse(input)?;
+        let (input, notes) = nom::multi::count(parse_row(channels_num), header.rows_num as usize)
+            .map(|e| XmPatternRows(e))
+            .parse(input)?;
 
         Ok((input, (header, notes, excess)))
     }
@@ -195,4 +195,3 @@ impl std::fmt::Display for XmPatternRows {
         std::fmt::Result::Ok(())
     }
 }
-

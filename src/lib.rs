@@ -43,4 +43,3 @@ fn fixed_length_string<'a>(length: usize) -> impl FnMut(&'a [u8]) -> IResult<&'a
         .map(|e| (e.0, e.1.trim().to_owned()))
     }
 }
-

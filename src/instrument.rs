@@ -1,7 +1,7 @@
 use bitfield_struct::bitfield;
 use nom::{error::ParseError, sequence::tuple, IResult};
 
-// const XM_SAMPLE_HEADER_SIZE: usize = 
+// const XM_SAMPLE_HEADER_SIZE: usize =
 
 #[bitfield(u8)]
 pub struct XmEnvelopeType {
@@ -168,9 +168,7 @@ fn parse_vibrato_opts<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVibratoOpts> {
     ))
 }
 
-fn parse_instrument_sample_opts<'a>(
-    data: &'a [u8],
-) -> IResult<&'a [u8], XmInstrumentSampleOpts> {
+fn parse_instrument_sample_opts<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstrumentSampleOpts> {
     let (
         input,
         (
@@ -195,8 +193,8 @@ fn parse_instrument_sample_opts<'a>(
     ) = tuple((
         nom::number::complete::le_u32,       // Sample header size
         nom::bytes::complete::take(96usize), // Sample keymap assignments
-        parse_envelope_points(12),        // Points for volume envelope
-        parse_envelope_points(12),        // Points for panning envelope
+        parse_envelope_points(12),           // Points for volume envelope
+        parse_envelope_points(12),           // Points for panning envelope
         nom::number::complete::u8,           // Number of volume points
         nom::number::complete::u8,           // Number of panning points
         nom::number::complete::u8,           // Volume sustain point
@@ -205,9 +203,9 @@ fn parse_instrument_sample_opts<'a>(
         nom::number::complete::u8,           // Panning sustain point
         nom::number::complete::u8,           // Panning loop start point
         nom::number::complete::u8,           // Panning loop end point
-        parse_envelope_type,              // Volume type
-        parse_envelope_type,              // Panning type
-        parse_vibrato_opts,               // Vibrato options
+        parse_envelope_type,                 // Volume type
+        parse_envelope_type,                 // Panning type
+        parse_vibrato_opts,                  // Vibrato options
         nom::number::complete::le_u16,       // Volume fadeout
         nom::bytes::complete::take(22usize), // Reserved data
     ))(data)?;

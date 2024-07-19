@@ -16,7 +16,7 @@ pub enum XmNoteRaw {
     A1,
     AS1,
     B1,
-    
+
     C2,
     CS2,
     D2,
@@ -29,7 +29,7 @@ pub enum XmNoteRaw {
     A2,
     AS2,
     B2,
-    
+
     C3,
     CS3,
     D3,
@@ -42,7 +42,7 @@ pub enum XmNoteRaw {
     A3,
     AS3,
     B3,
-    
+
     C4,
     CS4,
     D4,
@@ -55,7 +55,7 @@ pub enum XmNoteRaw {
     A4,
     AS4,
     B4,
-    
+
     C5,
     CS5,
     D5,
@@ -68,7 +68,7 @@ pub enum XmNoteRaw {
     A5,
     AS5,
     B5,
-    
+
     C6,
     CS6,
     D6,
@@ -81,7 +81,7 @@ pub enum XmNoteRaw {
     A6,
     AS6,
     B6,
-    
+
     C7,
     CS7,
     D7,
@@ -94,7 +94,7 @@ pub enum XmNoteRaw {
     A7,
     AS7,
     B7,
-    
+
     C8,
     CS8,
     D8,
@@ -108,7 +108,7 @@ pub enum XmNoteRaw {
     AS8,
     B8,
 
-    NoteOff
+    NoteOff,
 }
 
 pub const XM_TONE_COUNT: u8 = 12;
@@ -151,10 +151,7 @@ impl std::fmt::Display for XmTone {
 }
 
 pub enum XmNote {
-    Note {
-        tone: XmTone,
-        octave: u8
-    },
+    Note { tone: XmTone, octave: u8 },
     NoNote,
     NoteOff,
 }
@@ -164,7 +161,7 @@ impl std::fmt::Display for XmNote {
         match self {
             Self::NoNote => write!(f, "..."),
             Self::NoteOff => write!(f, "== "),
-            Self::Note { tone, octave } => write!(f, "{}{}", tone, octave)
+            Self::Note { tone, octave } => write!(f, "{}{}", tone, octave),
         }
     }
 }
@@ -183,8 +180,11 @@ pub fn parse_xm_note<'a>(input: &'a [u8]) -> IResult<&'a [u8], XmNote> {
     let octave = value / XM_TONE_COUNT;
 
     if octave > XM_MAX_OCTAVE {
-        return Err(nom::Err::Error(nom::error::Error::from_error_kind(input, nom::error::ErrorKind::Verify)))
-    }       
+        return Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            input,
+            nom::error::ErrorKind::Verify,
+        )));
+    }
 
     let tone_raw = value as u16 - (octave as u16 * XM_TONE_COUNT as u16);
     let tone = match tone_raw {
@@ -200,8 +200,19 @@ pub fn parse_xm_note<'a>(input: &'a [u8]) -> IResult<&'a [u8], XmNote> {
         9 => XmTone::A,
         10 => XmTone::AS,
         11 => XmTone::B,
-        _ => return Err(nom::Err::Error(nom::error::Error::from_error_kind(input, nom::error::ErrorKind::Verify)))
+        _ => {
+            return Err(nom::Err::Error(nom::error::Error::from_error_kind(
+                input,
+                nom::error::ErrorKind::Verify,
+            )))
+        }
     };
 
-    Ok((input, XmNote::Note { tone, octave: octave + 1 }))
+    Ok((
+        input,
+        XmNote::Note {
+            tone,
+            octave: octave + 1,
+        },
+    ))
 }

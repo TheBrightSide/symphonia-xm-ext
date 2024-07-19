@@ -36,20 +36,20 @@ pub(crate) fn parse<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmHeader, String, 
             default_bpm,
         ),
     ) = tuple((
-        crate::fixed_length_string(17),       // ID Text
-        crate::fixed_length_string(20),       // Module name
-        nom::number::complete::u8,     // 0x1A
-        crate::fixed_length_string(20),       // Tracker name
-        nom::number::complete::le_u16, // Version number
-        nom::number::complete::le_u32, // Header size
+        crate::fixed_length_string(17), // ID Text
+        crate::fixed_length_string(20), // Module name
+        nom::number::complete::u8,      // 0x1A
+        crate::fixed_length_string(20), // Tracker name
+        nom::number::complete::le_u16,  // Version number
+        nom::number::complete::le_u32,  // Header size
         nom::combinator::verify(nom::number::complete::le_u16, |e| (1..=256u16).contains(e)), // Song length
         nom::number::complete::le_u16, // Restart position
         nom::combinator::verify(nom::number::complete::le_u16, |e| (0..128).contains(e)), // Number of channels (OpenMPT allows a max of 127)
         nom::combinator::verify(nom::number::complete::le_u16, |e| (1..=256).contains(e)), // Number of patterns
         nom::combinator::verify(nom::number::complete::le_u16, |e| (0..=128).contains(e)), // Number of instruments
-        nom::number::complete::le_u16,                                   // Flags
-        nom::number::complete::le_u16,                                   // Default tempo
-        nom::number::complete::le_u16,                                   // Default BPM
+        nom::number::complete::le_u16,                                                     // Flags
+        nom::number::complete::le_u16, // Default tempo
+        nom::number::complete::le_u16, // Default BPM
     ))(data)?;
 
     let is_amiga = (flags & 0x1) == 0;
