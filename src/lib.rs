@@ -1,14 +1,4 @@
-use std::{num::NonZeroU16, rc::Rc, time::Duration};
-
-use bitfield_struct::bitfield;
-use effect::XmVolumeColumn;
-use nom::{
-    bytes::complete::take,
-    combinator::{cond, map_res, verify},
-    error::ParseError,
-    sequence::tuple,
-    IResult, Parser,
-};
+use nom::{bytes::complete::take, combinator::map_res, error::ParseError, IResult};
 
 mod effect;
 mod header;

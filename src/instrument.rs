@@ -1,8 +1,6 @@
 use bitfield_struct::bitfield;
 use nom::{error::ParseError, sequence::tuple, IResult};
 
-// const XM_SAMPLE_HEADER_SIZE: usize =
-
 #[bitfield(u8)]
 pub struct XmEnvelopeType {
     pub on: bool,
@@ -94,23 +92,17 @@ pub struct XmSampleType {
     __: u8,
 }
 
-#[repr(u8)]
-pub enum XmSampleDataType {
-    RegularDelta = 0x00,
-    ADPCM4Bit = 0xAD,
-}
-
+#[derive(Debug)]
 pub struct XmSampleHeader {
-    length: u32,
-    loop_start: u32,
-    loop_length: u32,
-    volume: u8,
-    finetune: i8,
-    kind: XmSampleType,
-    panning: u8,
-    relative_note_num: i8,
-    data_kind: XmSampleDataType,
-    name: String,
+    pub length: u32,
+    pub loop_start: u32,
+    pub loop_length: u32,
+    pub volume: u8,
+    pub finetune: i8,
+    pub kind: XmSampleType,
+    pub panning: u8,
+    pub relative_note_num: i8,
+    pub name: String,
 }
 
 pub type XmSampleData = Vec<u8>;
@@ -278,7 +270,7 @@ fn parse_instrument_sample_opts<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstr
     ))
 }
 
-fn parse_instrument_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstrumentHeader> {
+pub(crate) fn parse_instrument_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstrumentHeader> {
     let (input, (header_size, name, kind, samples_num)) = tuple((
         nom::number::complete::le_u32,
         crate::fixed_length_string(22),
@@ -301,46 +293,45 @@ fn parse_instrument_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmInstrument
     ))
 }
 
-fn parse_sample_data_type<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmSampleDataType> {
-    let (input, byte) = nom::number::complete::u8(data)?;
+pub(crate) fn parse_sample_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmSampleHeader, &'a [u8])> {
+    let (input, (
+        length,
+        loop_start,
+        loop_length,
+        volume,
+        finetune,
+        kind,
+        panning,
+        relative_note_num,
+        _reserved,
+        name
+    )) = tuple((
+        nom::number::complete::le_u32, // Sample length
+        nom::number::complete::le_u32, // Sample loop start
+        nom::number::complete::le_u32, // Sample loop length
+        nom::number::complete::u8, // Volume
+        nom::number::complete::i8, // Finetune
+        nom::combinator::map(nom::number::complete::u8, XmSampleType), // Type
+        nom::number::complete::u8, // Panning
+        nom::number::complete::i8, // Relative note number
+        nom::number::complete::u8, // Reserved (Sample data type)
+        crate::fixed_length_string(22) // Sample name
+    ))(data)?;
 
-    match byte {
-        0x00 => Ok((input, XmSampleDataType::RegularDelta)),
-        0xAD => Ok((input, XmSampleDataType::ADPCM4Bit)),
-        _ => Err(nom::Err::Error(nom::error::Error::from_error_kind(
-            input,
-            nom::error::ErrorKind::Verify,
-        ))),
-    }
+    let (input, data) = nom::bytes::complete::take(length)(input)?;
+
+    Ok((input, (XmSampleHeader {
+        length,
+        loop_start,
+        loop_length,
+        volume,
+        finetune,
+        kind,
+        panning,
+        relative_note_num,
+        name
+    }, data)))
 }
-
-// fn parse_sample_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmSampleHeader> {
-//     let (input, (
-//         length,
-//         loop_start,
-//         loop_length,
-//         volume,
-//         finetune,
-//         kind,
-//         panning,
-//         relative_note_num,
-//         data_kind,
-//         name
-//     )) = tuple((
-//         nom::number::complete::le_u32, // Sample length
-//         nom::number::complete::le_u32, // Sample loop start
-//         nom::number::complete::le_u32, // Sample loop length
-//         nom::number::complete::u8, // Volume
-//         nom::number::complete::i8, // Finetune
-//         nom::combinator::map(nom::number::complete::u8, |v| XmSampleType), // Type
-//         nom::number::complete::u8, // Panning
-//         nom::number::complete::i8, // Relative note number
-//         parse_sample_data_type, // Sample data type
-//         crate::fixed_length_string(22) // Sample name
-//     ))(data)?;
-
-//     Ok()
-// }
 
 impl XmSampleBitRate {
     const fn from_bits(value: u8) -> Self {
