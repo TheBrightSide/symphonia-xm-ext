@@ -9,7 +9,7 @@ The following features are implemented:
 - [x] Parsing of header
 - [x] Parsing of pattern data
 - [x] Parsing of instrument data
-- [ ] Parsing of sample data
+- [x] Parsing of sample data
 - [ ] Unit tests
 - [ ] Demuxing samples
 - [ ] Generating stream

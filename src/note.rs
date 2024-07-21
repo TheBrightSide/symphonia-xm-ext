@@ -166,7 +166,7 @@ impl std::fmt::Display for XmNote {
     }
 }
 
-pub fn parse_xm_note<'a>(input: &'a [u8]) -> IResult<&'a [u8], XmNote> {
+pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmNote> {
     let (input, value) = nom::number::complete::u8(input)?;
 
     match value {

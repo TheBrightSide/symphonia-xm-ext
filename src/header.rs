@@ -16,7 +16,7 @@ pub struct XmHeader {
     pub default_bpm: u16,
 }
 
-pub(crate) fn parse<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmHeader, String, u8, u32)> {
+pub(crate) fn parse(data: &[u8]) -> IResult<&[u8], (XmHeader, String, u8, u32)> {
     let (
         input,
         (

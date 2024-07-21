@@ -1,9 +1,6 @@
 use bitfield_struct::bitfield;
 use nom::{combinator::cond, error::ParseError, sequence::tuple, IResult};
 
-// TODO: convert this to an enum
-pub struct XmEffectWord(pub(crate) u8);
-
 #[bitfield(u8, order = Lsb)]
 pub struct DoubleU4 {
     #[bits(4)]
@@ -81,7 +78,7 @@ pub enum XmVolumeColumnCommand {
     Unknown,
 }
 
-pub(crate) fn parse_volume_column<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVolumeColumn> {
+pub(crate) fn parse_volume_column(data: &[u8]) -> IResult<&[u8], XmVolumeColumn> {
     let (input, byte) = nom::number::complete::u8(data)?;
     let byte = XmVolumeColumn::from(byte);
 
@@ -95,10 +92,10 @@ pub(crate) fn parse_volume_column<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmVol
     }
 }
 
-pub(crate) fn parse_effect<'a>(
+pub(crate) fn parse_effect(
     effect_type_follows: bool,
     effect_parameter_follows: bool,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], Option<XmEffect>> {
+) -> impl FnMut(&[u8]) -> IResult<&[u8], Option<XmEffect>> {
     move |data| {
         let (input, (command, parameter)) = tuple((
             cond(effect_type_follows, nom::number::complete::u8),
@@ -167,7 +164,7 @@ pub(crate) fn parse_effect<'a>(
             (0x22, a, _) => Ok((input, Some(XmEffect::Panbrello(DoubleU4(a))))), // Y 0x22(xy) NOTE: ModPlug hack
             (0x23, a, _) => Ok((input, Some(XmEffect::MidiMacro(a)))), // Z 0x23(xx) NOTE: ModPlug hack
             (0x24, a, _) => Ok((input, Some(XmEffect::SmoothMidiMacro(a)))), // \ 0x24(xx) NOTE: ModPlug hack
-            (_, a, _) => Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            (_, _a, _) => Err(nom::Err::Error(nom::error::Error::from_error_kind(
                 data,
                 nom::error::ErrorKind::Verify,
             ))),

@@ -1,12 +1,11 @@
-use crate::{effect, fixed_length_string, instrument, note};
-use std::rc::Rc;
+use crate::{effect, note};
 
 use bitfield_struct::bitfield;
 use nom::{error::ParseError, sequence::tuple, IResult, Parser};
 
 const XM_PATTERN_HEADER_SIZE: usize = 9;
 
-type XmPatternOrderTableRaw<'a> = &'a [u8];
+pub type XmPatternOrderTable = Vec<u8>;
 
 #[derive(Debug)]
 pub struct XmPatternHeader {
@@ -34,16 +33,16 @@ pub struct XmNoteFlags {
 
 pub struct XmPatternSlot {
     note: note::XmNote,
-    instrument: Option<instrument::XmInstrumentHeader>,
+    instrument_index: Option<u8>,
     volume_column: Option<effect::XmVolumeColumn>,
     effect: Option<effect::XmEffect>,
 }
 
-pub(crate) fn parse_order_table_raw<'a>(
-    data: &'a [u8],
+pub(crate) fn parse_order_table_raw(
+    data: &[u8],
     length: usize,
     size: usize,
-) -> IResult<&'a [u8], XmPatternOrderTableRaw<'a>> {
+) -> IResult<&[u8], XmPatternOrderTable> {
     if length > size {
         Err(nom::Err::Error(nom::error::Error::from_error_kind(
             data,
@@ -53,11 +52,11 @@ pub(crate) fn parse_order_table_raw<'a>(
         let (input, out) = nom::bytes::complete::take(length)(data)?;
         let (input, _) = nom::bytes::complete::take(size - length)(input)?;
 
-        Ok((input, out))
+        Ok((input, out.to_vec()))
     }
 }
 
-fn parse_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmPatternHeader, &'a [u8])> {
+fn parse_header(data: &[u8]) -> IResult<&[u8], (XmPatternHeader, &[u8])> {
     let (input, (header_length, packing_type, rows_num, packed_data_size)) = tuple((
         nom::number::complete::le_u32, // Pattern header length
         nom::number::complete::u8,     // Packing type
@@ -85,14 +84,14 @@ fn parse_header<'a>(data: &'a [u8]) -> IResult<&'a [u8], (XmPatternHeader, &'a [
     ))
 }
 
-fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
+fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
     let (input, note_or_flags) = nom::number::complete::u8(data)?;
     let is_flags = ((note_or_flags & (0x1 << 7)) >> 7) == 1;
 
     if is_flags {
         let flags = XmNoteFlags(note_or_flags);
 
-        let (input, (note, instrument, volume_column)) = tuple((
+        let (input, (note, instrument_index, volume_column)) = tuple((
             nom::combinator::cond(flags.note_follows(), note::parse_xm_note)
                 .map(|e| e.unwrap_or(note::XmNote::NoNote)),
             nom::combinator::cond(flags.instrument_follows(), nom::number::complete::u8),
@@ -111,13 +110,13 @@ fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
             input,
             XmPatternSlot {
                 note,
-                instrument: None,
+                instrument_index,
                 volume_column,
                 effect,
             },
         ))
     } else {
-        let (input, (note, instrument, volume_column, effect)) = tuple((
+        let (input, (note, instrument_index, volume_column, effect)) = tuple((
             note::parse_xm_note,
             nom::number::complete::u8,
             effect::parse_volume_column,
@@ -128,7 +127,7 @@ fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
             input,
             XmPatternSlot {
                 note,
-                instrument: None,
+                instrument_index: Some(instrument_index),
                 volume_column: Some(volume_column),
                 effect,
             },
@@ -136,7 +135,7 @@ fn parse_slot<'a>(data: &'a [u8]) -> IResult<&'a [u8], XmPatternSlot> {
     }
 }
 
-fn parse_row<'a>(channels_num: u16) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], XmPatternRow> {
+fn parse_row(channels_num: u16) -> impl FnMut(&[u8]) -> IResult<&[u8], XmPatternRow> {
     move |data| {
         nom::multi::count(parse_slot, channels_num as usize)
             .map(|e| XmPatternRow(e))
@@ -144,9 +143,9 @@ fn parse_row<'a>(channels_num: u16) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8],
     }
 }
 
-pub(crate) fn parse<'a>(
+pub(crate) fn parse(
     channels_num: u16,
-) -> impl FnMut(&'a [u8]) -> IResult<&'a [u8], (XmPatternHeader, XmPatternRows, &'a [u8])> {
+) -> impl FnMut(&[u8]) -> IResult<&[u8], (XmPatternHeader, XmPatternRows, &[u8])> {
     move |data| {
         let (input, (header, excess)) = parse_header(data)?;
 
@@ -171,7 +170,12 @@ impl std::fmt::Display for XmPatternSlot {
             None => "...".to_owned(),
         };
 
-        write!(f, "{}{}{}", self.note, volume_col_fmt, effect_fmt)
+        let instr_idx_fmt = match self.instrument_index {
+            Some(ref v) => format!("{:0>2}", v),
+            None => "..".to_owned()
+        };
+
+        write!(f, "{}{}{}{}", self.note, instr_idx_fmt, volume_col_fmt, effect_fmt)
     }
 }
 
