@@ -116,6 +116,7 @@ pub const XM_MAX_OCTAVE: u8 = 8;
 pub const XM_NO_NOTE: u8 = XmNoteRaw::NoNote as u8;
 pub const XM_NOTE_OFF: u8 = XmNoteRaw::NoteOff as u8;
 
+#[derive(Clone)]
 pub enum XmTone {
     C,
     CS,
@@ -150,10 +151,17 @@ impl std::fmt::Display for XmTone {
     }
 }
 
+#[derive(Clone)]
 pub enum XmNote {
     Note { tone: XmTone, octave: u8 },
     NoNote,
     NoteOff,
+}
+
+impl Default for XmNote {
+    fn default() -> Self {
+        Self::NoNote
+    }
 }
 
 impl std::fmt::Display for XmNote {

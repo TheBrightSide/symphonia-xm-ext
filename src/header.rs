@@ -1,6 +1,6 @@
 use nom::{sequence::tuple, IResult};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmHeader {
     pub module_name: String,
     pub tracker_name: String,
@@ -36,11 +36,13 @@ pub(crate) fn parse(data: &[u8]) -> IResult<&[u8], (XmHeader, String, u8, u32)> 
             default_bpm,
         ),
     ) = tuple((
-        crate::fixed_length_string(17), // ID Text
+        nom::combinator::verify(crate::fixed_length_string(17), |e| {
+            e == "Extended Module: ".to_owned()
+        }), // ID Text
         crate::fixed_length_string(20), // Module name
-        nom::number::complete::u8,      // 0x1A
+        nom::combinator::verify(nom::number::complete::u8, |e| e == &0x1A), // 0x1A
         crate::fixed_length_string(20), // Tracker name
-        nom::number::complete::le_u16,  // Version number
+        nom::combinator::verify(nom::number::complete::le_u16, |e| e == &0x0104), // Version number
         nom::number::complete::le_u32,  // Header size
         nom::combinator::verify(nom::number::complete::le_u16, |e| (1..=256u16).contains(e)), // Song length
         nom::number::complete::le_u16, // Restart position

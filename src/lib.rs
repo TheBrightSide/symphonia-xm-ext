@@ -1,23 +1,28 @@
 use nom::{bytes::complete::take, combinator::map_res, error::ParseError, IResult};
 
-mod effect;
-mod header;
-mod instrument;
-mod note;
-mod pattern;
+pub mod effect;
+pub mod header;
+pub mod instrument;
+pub mod note;
+pub mod pattern;
+
+// pub mod context;
+
+pub use either;
 
 #[cfg(test)]
 mod tests;
 
-type XmSamplePair = (instrument::XmSampleHeader, instrument::XmSamplePcmData);
+pub type XmSample = (instrument::XmSampleHeader, instrument::XmSamplePcmData);
 
-type XmInstrumentCollection = Vec<(instrument::XmInstrumentHeader, Vec<XmSamplePair>)>;
+pub type XmInstrumentCollection = Vec<(instrument::XmInstrumentHeader, Vec<XmSample>)>;
 
-type XmPattern = (pattern::XmPatternHeader, pattern::XmPatternRows);
+pub type XmPattern = (pattern::XmPatternHeader, pattern::XmPatternRows);
 
-type XmPatternCollection = Vec<XmPattern>;
+pub type XmPatternCollection = Vec<XmPattern>;
 
-pub struct XmFormat {
+#[derive(Clone)]
+pub struct XmModule {
     pub header: header::XmHeader,
     pub patterns: XmPatternCollection,
     pub instruments: XmInstrumentCollection,
@@ -40,7 +45,7 @@ fn fixed_length_string<'a>(length: usize) -> impl FnMut(&'a [u8]) -> IResult<&'a
     }
 }
 
-pub fn parse(data: &[u8]) -> IResult<&[u8], XmFormat> {
+pub fn parse(data: &[u8]) -> IResult<&[u8], XmModule> {
     let (input, header) = header::parse(data)?;
     let (input, pattern_order_table) =
         pattern::parse_order_table_raw(input, header.0.song_length as usize, header.3 as usize)?;
@@ -53,7 +58,7 @@ pub fn parse(data: &[u8]) -> IResult<&[u8], XmFormat> {
 
     Ok((
         input,
-        XmFormat {
+        XmModule {
             header: header.0,
             patterns: patterns.into_iter().map(|e| (e.0, e.1)).collect::<Vec<_>>(),
             instruments,

@@ -7,7 +7,7 @@ const XM_PATTERN_HEADER_SIZE: usize = 9;
 
 pub type XmPatternOrderTable = Vec<u8>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmPatternHeader {
     pub header_length: u32,
     pub packing_type: u8,
@@ -15,8 +15,10 @@ pub struct XmPatternHeader {
     pub packed_data_size: u16,
 }
 
+#[derive(Clone)]
 pub struct XmPatternRow(pub Vec<XmPatternSlot>);
 
+#[derive(Clone)]
 pub struct XmPatternRows(pub Vec<XmPatternRow>);
 
 #[bitfield(u8)]
@@ -31,6 +33,7 @@ pub struct XmNoteFlags {
     __: u8,
 }
 
+#[derive(Clone, Default)]
 pub struct XmPatternSlot {
     note: note::XmNote,
     instrument_index: Option<u8>,

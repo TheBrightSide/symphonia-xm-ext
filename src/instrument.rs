@@ -15,7 +15,7 @@ pub struct XmEnvelopeType {
     __: u8,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum XmVibratoType {
     Sine,
     Square,
@@ -23,13 +23,13 @@ pub enum XmVibratoType {
     RampDown,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct XmEnvelopePoint {
     pub frame: u16,
     pub value: u16,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmEnvelope {
     pub points: Vec<XmEnvelopePoint>,
     pub sustain_point: Option<u8>,
@@ -37,7 +37,7 @@ pub struct XmEnvelope {
     pub loop_end_point: Option<u8>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmVibratoOpts {
     pub kind: XmVibratoType,
     pub sweep: u8,
@@ -45,7 +45,7 @@ pub struct XmVibratoOpts {
     pub rate: u8,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmInstrumentSampleOpts {
     pub sample_header_size: u32,
     pub sample_keymap_assignments: [u8; 96],
@@ -55,7 +55,7 @@ pub struct XmInstrumentSampleOpts {
     pub volume_fadeout: u16,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmInstrumentHeader {
     pub header_size: u32,
     pub name: String,
@@ -65,7 +65,7 @@ pub struct XmInstrumentHeader {
 }
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum XmSampleLoopType {
     NoLoop,
     ForwardLoop,
@@ -74,7 +74,7 @@ pub enum XmSampleLoopType {
 }
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum XmSampleBitDepth {
     Bit8,
     Bit16,
@@ -96,7 +96,7 @@ pub struct XmSampleType {
     __: u8,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct XmSampleHeader {
     pub length: u32,
     pub loop_start: u32,

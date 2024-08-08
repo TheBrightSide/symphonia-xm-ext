@@ -10,6 +10,7 @@ pub struct DoubleU4 {
     pub y: u8,
 }
 
+#[derive(Clone)]
 pub enum XmEffect {
     Arpeggio(DoubleU4),                  // 0 0x00(xy)
     PortamentoUp(u8),                    // 1 0x01(xx)
@@ -60,6 +61,7 @@ pub enum XmEffect {
     SmoothMidiMacro(u8),                 // \ 0x24(xx) NOTE: ModPlug hack
 }
 
+#[derive(Clone)]
 pub struct XmVolumeColumn(u8);
 
 #[repr(u8)]
@@ -111,9 +113,9 @@ pub(crate) fn parse_effect(
             return Ok((input, None));
         };
 
-        let high_ord_nibble_arg = parameter >> 4;
+        let high_ord_nibble_param = parameter >> 4;
 
-        match (command, parameter, high_ord_nibble_arg) {
+        match (command, parameter, high_ord_nibble_param) {
             (0x00, a, _) => Ok((input, Some(XmEffect::Arpeggio(DoubleU4(a))))), // 0 0x00(xy)
             (0x01, a, _) => Ok((input, Some(XmEffect::PortamentoUp(a)))),       // 1 0x01(xx)
             (0x02, a, _) => Ok((input, Some(XmEffect::PortamentoDown(a)))),     // 2 0x02(xx)
