@@ -8,8 +8,6 @@ pub mod pattern;
 
 // pub mod context;
 
-pub use either;
-
 #[cfg(test)]
 mod tests;
 

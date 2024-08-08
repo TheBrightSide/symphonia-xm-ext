@@ -109,7 +109,11 @@ pub struct XmSampleHeader {
     pub name: String,
 }
 
-pub type XmSamplePcmData = Either<Vec<i8>, Vec<i16>>;
+#[derive(Clone)]
+pub enum XmSamplePcmData {
+    Bit8Data(Vec<i8>),
+    Bit16Data(Vec<i16>)
+}
 
 fn parse_envelope_point(data: &[u8]) -> IResult<&[u8], XmEnvelopePoint> {
     let (input, (x, y)) =
@@ -378,7 +382,7 @@ fn decode_dpcm_data(
                     out.push(*previous);
                 }
 
-                Ok((input, Either::Left(out)))
+                Ok((input, XmSamplePcmData::Bit8Data(out)))
             }
             Either::Right(ref mut previous) => {
                 let mut out = vec![];
@@ -390,7 +394,7 @@ fn decode_dpcm_data(
                     out.push(*previous);
                 }
 
-                Ok((input, Either::Right(out)))
+                Ok((input, XmSamplePcmData::Bit16Data(out)))
             }
         }
     }
