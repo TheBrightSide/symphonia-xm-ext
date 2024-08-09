@@ -2,6 +2,8 @@ use bitfield_struct::bitfield;
 use either::Either;
 use nom::{error::ParseError, sequence::tuple, IResult};
 
+use crate::interpolation::{self, Interpolation};
+
 const XM_INSTRUMENT_HEADER_SIZE: usize = 29;
 const XM_INSTRUMENT_HEADER_SIZE_W_OPTS: usize = 263;
 
@@ -112,7 +114,75 @@ pub struct XmSampleHeader {
 #[derive(Clone)]
 pub enum XmSamplePcmData {
     Bit8Data(Vec<i8>),
-    Bit16Data(Vec<i16>)
+    Bit16Data(Vec<i16>),
+}
+
+pub enum XmResamplingType {
+    NoInterpolation,
+    LinearInterpolation,
+}
+
+impl XmSamplePcmData {
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Bit8Data(v) => v.len(),
+            Self::Bit16Data(v) => v.len(),
+        }
+    }
+
+    pub fn get(&self, pos: usize) -> Option<f32> {
+        match self {
+            Self::Bit8Data(v) => v.get(pos).map(|e| (*e as f32) / i8::MAX as f32),
+            Self::Bit16Data(v) => v.get(pos).map(|e| (*e as f32) / i16::MAX as f32),
+        }
+    }
+
+    pub fn get_interpolated(
+        &self,
+        pos: f32,
+        reverse: bool,
+        resampling: XmResamplingType,
+    ) -> Option<f32> {
+        if pos.ceil() as usize >= self.len() || pos < 0.0 {
+            return None;
+        }
+
+        let sample_index = pos.floor() as usize;
+        let previous_sample_index = || {
+            if sample_index != 0 {
+                sample_index - 1
+            } else {
+                sample_index
+            }
+        };
+        let next_sample_index = || {
+            if sample_index < self.len() - 1 {
+                sample_index + 1
+            } else {
+                sample_index
+            }
+        };
+
+        let step = || pos - pos.floor();
+
+        let (Some(first), Some(second)) = (if reverse {
+            (self.get(previous_sample_index()), self.get(sample_index))
+        } else {
+            (self.get(sample_index), self.get(next_sample_index()))
+        }) else {
+            return None;
+        };
+
+        match resampling {
+            // second and third argument are ignored for NoInterpolation
+            XmResamplingType::NoInterpolation => {
+                Some(interpolation::NoInterpolation::interpolate(first, 0.0, 0.0))
+            }
+            XmResamplingType::LinearInterpolation => Some(
+                interpolation::LinearInterpolation::interpolate(first, second, step()),
+            ),
+        }
+    }
 }
 
 fn parse_envelope_point(data: &[u8]) -> IResult<&[u8], XmEnvelopePoint> {
