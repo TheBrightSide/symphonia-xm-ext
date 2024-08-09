@@ -7,6 +7,7 @@ pub mod note;
 pub mod pattern;
 
 pub mod interpolation;
+pub mod frequency;
 
 pub mod context;
 

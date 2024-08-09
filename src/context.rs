@@ -156,6 +156,7 @@ pub struct XmPlaybackContext<'a> {
 
     tempo: u16,
     bpm: u16,
+    volume: f32,
 
     current_order: u32,
     current_row: u32,
@@ -175,8 +176,10 @@ impl<'a> XmPlaybackContext<'a> {
     pub fn new(module: XmModule, sample_rate: u32) -> Self {
         Self {
             sample_rate,
+
             tempo: module.header.default_tempo,
             bpm: module.header.default_bpm,
+            volume: 1.0,
 
             current_order: 0,
             current_row: 0,

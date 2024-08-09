@@ -183,7 +183,7 @@ pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmNote> {
         _ => {}
     }
 
-    // we subtract 1 so we bring it to 0
+    // we subtract 1, discarding the NoNote scenario, since we already checked for that
     let value = value - 1;
     let octave = value / XM_TONE_COUNT;
 

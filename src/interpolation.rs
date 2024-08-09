@@ -17,8 +17,8 @@ impl Interpolation for LinearInterpolation {
 }
 
 impl Interpolation for NoInterpolation {
-    fn interpolate(t: f32, _: f32, _: f32) -> f32 {
-        t
+    fn interpolate(v0: f32, _: f32, _: f32) -> f32 {
+        v0
     }
 }
 
