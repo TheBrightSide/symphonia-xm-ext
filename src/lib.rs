@@ -6,7 +6,9 @@ pub mod instrument;
 pub mod note;
 pub mod pattern;
 
-// pub mod context;
+pub mod interpolation;
+
+pub mod context;
 
 #[cfg(test)]
 mod tests;
