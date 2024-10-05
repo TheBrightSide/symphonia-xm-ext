@@ -229,10 +229,6 @@ impl std::fmt::Display for XmEffect {
 }
 
 impl XmVolumeColumnCommand {
-    const fn into_bits(self) -> u8 {
-        self as _
-    }
-
     const fn from_bits(value: u8) -> Self {
         match value {
             (0x0..=0x5) => XmVolumeColumnCommand::SetVolume,
