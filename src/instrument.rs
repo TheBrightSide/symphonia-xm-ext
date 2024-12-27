@@ -2,7 +2,10 @@ use bitfield_struct::bitfield;
 use either::Either;
 use nom::{error::ParseError, sequence::tuple, IResult};
 
-use crate::interpolation::{self, Interpolation};
+use crate::{
+    interpolation::{self, Interpolation},
+    note::XmNote,
+};
 
 const XM_INSTRUMENT_HEADER_SIZE: usize = 29;
 const XM_INSTRUMENT_HEADER_SIZE_W_OPTS: usize = 263;
@@ -66,6 +69,12 @@ pub struct XmInstrumentHeader {
     pub sample_opts: Option<XmInstrumentSampleOpts>,
 }
 
+#[derive(Clone)]
+pub struct XmSample(XmSampleHeader, XmSamplePcmData);
+
+#[derive(Clone)]
+pub struct XmInstrument(XmInstrumentHeader, Vec<XmSample>);
+
 #[repr(u8)]
 #[derive(Clone, Debug)]
 pub enum XmSampleLoopType {
@@ -100,7 +109,6 @@ pub struct XmSampleType {
 
 #[derive(Clone, Debug)]
 pub struct XmSampleHeader {
-    pub length: u32,
     pub loop_start: u32,
     pub loop_length: u32,
     pub volume: u8,
@@ -182,6 +190,40 @@ impl XmSamplePcmData {
                 interpolation::LinearInterpolation::interpolate(first, second, step()),
             ),
         }
+    }
+}
+
+impl XmInstrument {
+    pub fn header(&self) -> &XmInstrumentHeader {
+        &self.0
+    }
+
+    pub fn sample_for_note(&self, note: XmNote) -> Option<&XmSample> {
+        let Some(ref sample_opts) = self.0.sample_opts else {
+            return None;
+        };
+
+        let note_index = note.index();
+
+        let Some(sample_index) = sample_opts
+            .sample_keymap_assignments
+            .get(note_index as usize)
+            .copied()
+        else {
+            return None;
+        };
+
+        self.1.get(sample_index as usize)
+    }
+}
+
+impl XmSample {
+    pub fn header(&self) -> &XmSampleHeader {
+        &self.0
+    }
+
+    pub fn data(&self) -> &XmSamplePcmData {
+        &self.1
     }
 }
 
@@ -352,7 +394,7 @@ pub(crate) fn parse_instrument_header(data: &[u8]) -> IResult<&[u8], XmInstrumen
     let (input, (header_size, name, kind, samples_num)) = tuple((
         nom::number::complete::le_u32,
         crate::fixed_length_string(22),
-        nom::number::complete::u8,
+        nom::number::complete::u8, // NOTE/TODO: should this always be zero?
         nom::number::complete::le_u16,
     ))(data)?;
 
@@ -382,7 +424,7 @@ pub(crate) fn parse_instrument_header(data: &[u8]) -> IResult<&[u8], XmInstrumen
     ))
 }
 
-pub(crate) fn parse_sample_header(data: &[u8]) -> IResult<&[u8], XmSampleHeader> {
+pub(crate) fn parse_sample_header(data: &[u8]) -> IResult<&[u8], (XmSampleHeader, u32)> {
     let (
         input,
         (
@@ -412,17 +454,19 @@ pub(crate) fn parse_sample_header(data: &[u8]) -> IResult<&[u8], XmSampleHeader>
 
     Ok((
         input,
-        XmSampleHeader {
+        (
+            XmSampleHeader {
+                loop_start,
+                loop_length,
+                volume,
+                finetune,
+                kind,
+                panning,
+                relative_note_num,
+                name,
+            },
             length,
-            loop_start,
-            loop_length,
-            volume,
-            finetune,
-            kind,
-            panning,
-            relative_note_num,
-            name,
-        },
+        ),
     ))
 }
 
@@ -470,12 +514,10 @@ fn decode_dpcm_data(
     }
 }
 
-pub(crate) fn parse(
-    data: &[u8],
-) -> IResult<&[u8], (XmInstrumentHeader, Vec<(XmSampleHeader, XmSamplePcmData)>)> {
+pub(crate) fn parse(data: &[u8]) -> IResult<&[u8], XmInstrument> {
     let (input, instr_header) = parse_instrument_header(data)?;
     if instr_header.samples_num == 0 {
-        return Ok((input, (instr_header, vec![])));
+        return Ok((input, XmInstrument(instr_header, vec![])));
     }
 
     let (mut input, sample_headers) =
@@ -484,7 +526,7 @@ pub(crate) fn parse(
     let mut sample_data_entries = vec![];
     for mut parser in sample_headers
         .iter()
-        .map(|e| decode_dpcm_data(e.length as usize, e.kind.depth()))
+        .map(|(e, length)| decode_dpcm_data(*length as usize, e.kind.depth()))
     {
         let (input_, sample_data_entry) = parser(input)?;
         input = input_;
@@ -493,11 +535,12 @@ pub(crate) fn parse(
 
     Ok((
         input,
-        (
+        XmInstrument(
             instr_header,
             sample_headers
                 .into_iter()
                 .zip(sample_data_entries.into_iter())
+                .map(|((x, _), y)| XmSample(x, y))
                 .collect::<Vec<_>>(),
         ),
     ))

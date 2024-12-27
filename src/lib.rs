@@ -1,3 +1,4 @@
+use instrument::XmInstrument;
 use nom::{bytes::complete::take, combinator::map_res, error::ParseError, IResult};
 
 pub mod effect;
@@ -9,14 +10,12 @@ pub mod pattern;
 pub mod interpolation;
 pub mod frequency;
 
-pub mod context;
+// pub mod context;
 
 #[cfg(test)]
 mod tests;
 
-pub type XmSample = (instrument::XmSampleHeader, instrument::XmSamplePcmData);
-
-pub type XmInstrumentCollection = Vec<(instrument::XmInstrumentHeader, Vec<XmSample>)>;
+pub type XmInstrumentCollection = Vec<XmInstrument>;
 
 pub type XmPattern = (pattern::XmPatternHeader, pattern::XmPatternRows);
 

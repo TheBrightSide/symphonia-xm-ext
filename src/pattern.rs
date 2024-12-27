@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use crate::{effect, note};
 
 use bitfield_struct::bitfield;
@@ -16,10 +18,10 @@ pub struct XmPatternHeader {
 }
 
 #[derive(Clone)]
-pub struct XmPatternRow(pub Vec<XmPatternSlot>);
+pub struct XmPatternRow(Vec<XmPatternSlot>);
 
 #[derive(Clone)]
-pub struct XmPatternRows(pub Vec<XmPatternRow>);
+pub struct XmPatternRows(Vec<XmPatternRow>);
 
 #[bitfield(u8)]
 pub struct XmNoteFlags {
@@ -35,10 +37,10 @@ pub struct XmNoteFlags {
 
 #[derive(Clone, Default)]
 pub struct XmPatternSlot {
-    note: note::XmNote,
-    instrument_index: Option<u8>,
-    volume_column: Option<effect::XmVolumeColumn>,
-    effect: Option<effect::XmEffect>,
+    pub signal: note::XmSignal,
+    pub instrument_index: Option<u8>,
+    pub volume_column: Option<effect::XmVolumeColumn>,
+    pub effect: Option<effect::XmEffect>,
 }
 
 pub(crate) fn parse_order_table_raw(
@@ -96,7 +98,7 @@ fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
 
         let (input, (note, instrument_index, volume_column)) = tuple((
             nom::combinator::cond(flags.note_follows(), note::parse_xm_note)
-                .map(|e| e.unwrap_or(note::XmNote::NoNote)),
+                .map(|e| e.unwrap_or(note::XmSignal::NoNote)),
             nom::combinator::cond(flags.instrument_follows(), nom::number::complete::u8),
             nom::combinator::cond(
                 flags.volume_column_byte_follows(),
@@ -112,7 +114,7 @@ fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
         Ok((
             input,
             XmPatternSlot {
-                note,
+                signal: note,
                 instrument_index,
                 volume_column,
                 effect,
@@ -129,7 +131,7 @@ fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
         Ok((
             input,
             XmPatternSlot {
-                note,
+                signal: note,
                 instrument_index: Some(instrument_index),
                 volume_column: Some(volume_column),
                 effect,
@@ -160,9 +162,24 @@ pub(crate) fn parse(
     }
 }
 
+impl Deref for XmPatternRows {
+    type Target = Vec<XmPatternRow>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Deref for XmPatternRow {
+    type Target = Vec<XmPatternSlot>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl std::fmt::Display for XmPatternSlot {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // TODO: add the rest
         let effect_fmt = match self.effect {
             Some(ref v) => format!("{}", v),
             None => "...".to_owned(),
@@ -174,11 +191,15 @@ impl std::fmt::Display for XmPatternSlot {
         };
 
         let instr_idx_fmt = match self.instrument_index {
-            Some(ref v) => format!("{:0>2}", v),
-            None => "..".to_owned()
+            Some(ref v) => format!("{: >3}", v),
+            None => "...".to_owned(),
         };
 
-        write!(f, "{}{}{}{}", self.note, instr_idx_fmt, volume_col_fmt, effect_fmt)
+        write!(
+            f,
+            "{}{}{}{}",
+            self.signal, instr_idx_fmt, volume_col_fmt, effect_fmt
+        )
     }
 }
 

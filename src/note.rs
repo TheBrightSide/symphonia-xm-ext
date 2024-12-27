@@ -116,7 +116,8 @@ pub const XM_MAX_OCTAVE: u8 = 8;
 pub const XM_NO_NOTE: u8 = XmNoteRaw::NoNote as u8;
 pub const XM_NOTE_OFF: u8 = XmNoteRaw::NoteOff as u8;
 
-#[derive(Clone)]
+#[repr(u8)]
+#[derive(Clone, Copy)]
 pub enum XmTone {
     C,
     CS,
@@ -151,35 +152,64 @@ impl std::fmt::Display for XmTone {
     }
 }
 
-#[derive(Clone)]
-pub enum XmNote {
-    Note { tone: XmTone, octave: u8 },
+#[derive(Clone, Copy)]
+pub struct XmNote {
+    pub tone: XmTone,
+    pub octave: u8,
+}
+
+#[derive(Clone, Copy)]
+pub enum XmSignal {
+    Note(XmNote),
     NoNote,
     NoteOff,
 }
 
-impl Default for XmNote {
+impl XmNote {
+    pub fn index(&self) -> u8 {
+        self.octave * XM_TONE_COUNT + self.tone as u8
+    }
+}
+
+impl Default for XmSignal {
     fn default() -> Self {
         Self::NoNote
     }
 }
 
-impl std::fmt::Display for XmNote {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl XmSignal {
+    pub fn is_note_off(&self) -> bool {
+        matches!(self, Self::NoteOff)
+    }
+
+    pub fn is_no_note(&self) -> bool {
+        matches!(self, Self::NoNote)
+    }
+
+    pub fn note(&self) -> Option<XmNote> {
         match self {
-            Self::NoNote => write!(f, "..."),
-            Self::NoteOff => write!(f, "== "),
-            Self::Note { tone, octave } => write!(f, "{}{}", tone, octave),
+            Self::Note(note) => Some(*note),
+            _ => None,
         }
     }
 }
 
-pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmNote> {
+impl std::fmt::Display for XmSignal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoNote => write!(f, "..."),
+            Self::NoteOff => write!(f, "== "),
+            Self::Note(XmNote { tone, octave }) => write!(f, "{}{}", tone, octave),
+        }
+    }
+}
+
+pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmSignal> {
     let (input, value) = nom::number::complete::u8(input)?;
 
     match value {
-        XM_NOTE_OFF => return Ok((input, XmNote::NoteOff)),
-        XM_NO_NOTE => return Ok((input, XmNote::NoNote)),
+        XM_NOTE_OFF => return Ok((input, XmSignal::NoteOff)),
+        XM_NO_NOTE => return Ok((input, XmSignal::NoNote)),
         _ => {}
     }
 
@@ -218,9 +248,9 @@ pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmNote> {
 
     Ok((
         input,
-        XmNote::Note {
+        XmSignal::Note(XmNote {
             tone,
             octave: octave + 1,
-        },
+        }),
     ))
 }
