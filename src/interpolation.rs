@@ -12,7 +12,7 @@ pub struct NoInterpolation;
 
 impl Interpolation for LinearInterpolation {
     fn interpolate(v0: f32, v1: f32, t: f32) -> f32 {
-        (v0 + t) * (v1 - v0)
+        (v0) + t * (v1 - v0)
     }
 }
 
