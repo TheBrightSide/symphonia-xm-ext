@@ -2,10 +2,7 @@ use bitfield_struct::bitfield;
 use either::Either;
 use nom::{error::ParseError, sequence::tuple, IResult};
 
-use crate::{
-    interpolation::{self, Interpolation},
-    note::XmNote,
-};
+use crate::{interpolation::{self, Interpolation}, note::{parse_relative_note_num, XmNote}};
 
 const XM_INSTRUMENT_HEADER_SIZE: usize = 29;
 const XM_INSTRUMENT_HEADER_SIZE_W_OPTS: usize = 263;
@@ -72,8 +69,7 @@ pub struct XmInstrumentHeader {
 #[derive(Clone)]
 pub struct XmSample(XmSampleHeader, XmSamplePcmData);
 
-#[derive(Clone)]
-pub struct XmInstrument(XmInstrumentHeader, Vec<XmSample>);
+pub type XmInstrument = (XmInstrumentHeader, Vec<XmSample>);
 
 #[repr(u8)]
 #[derive(Clone, Debug)]
@@ -103,7 +99,10 @@ pub struct XmSampleType {
     #[bits(1)]
     pub depth: XmSampleBitDepth,
 
-    #[bits(3)]
+    #[bits(1)]
+    is_stereo: bool,
+
+    #[bits(2)]
     __: u8,
 }
 
@@ -115,7 +114,7 @@ pub struct XmSampleHeader {
     pub finetune: i8,
     pub kind: XmSampleType,
     pub panning: u8,
-    pub relative_note_num: i8,
+    pub relative_note_num: XmNote,
     pub name: String,
 }
 
@@ -171,7 +170,7 @@ impl XmSamplePcmData {
             }
         };
 
-        let step = || pos - pos.floor();
+        let step = pos - pos.floor();
 
         let (Some(first), Some(second)) = (if reverse {
             (self.get(previous_sample_index()), self.get(sample_index))
@@ -187,33 +186,9 @@ impl XmSamplePcmData {
                 Some(interpolation::NoInterpolation::interpolate(first, 0.0, 0.0))
             }
             XmResamplingType::LinearInterpolation => Some(
-                interpolation::LinearInterpolation::interpolate(first, second, step()),
+                interpolation::LinearInterpolation::interpolate(first, second, step),
             ),
         }
-    }
-}
-
-impl XmInstrument {
-    pub fn header(&self) -> &XmInstrumentHeader {
-        &self.0
-    }
-
-    pub fn sample_for_note(&self, note: XmNote) -> Option<&XmSample> {
-        let Some(ref sample_opts) = self.0.sample_opts else {
-            return None;
-        };
-
-        let note_index = note.index();
-
-        let Some(sample_index) = sample_opts
-            .sample_keymap_assignments
-            .get(note_index as usize)
-            .copied()
-        else {
-            return None;
-        };
-
-        self.1.get(sample_index as usize)
     }
 }
 
@@ -447,7 +422,7 @@ pub(crate) fn parse_sample_header(data: &[u8]) -> IResult<&[u8], (XmSampleHeader
         nom::number::complete::i8,     // Finetune
         nom::combinator::map(nom::number::complete::u8, XmSampleType), // Type
         nom::number::complete::u8,     // Panning
-        nom::number::complete::i8,     // Relative note number
+        parse_relative_note_num,       // Relative note number
         nom::number::complete::u8,     // Reserved (Sample data type)
         crate::fixed_length_string(22), // Sample name
     ))(data)?;
@@ -517,7 +492,7 @@ fn decode_dpcm_data(
 pub(crate) fn parse(data: &[u8]) -> IResult<&[u8], XmInstrument> {
     let (input, instr_header) = parse_instrument_header(data)?;
     if instr_header.samples_num == 0 {
-        return Ok((input, XmInstrument(instr_header, vec![])));
+        return Ok((input, (instr_header, vec![])));
     }
 
     let (mut input, sample_headers) =
@@ -535,7 +510,7 @@ pub(crate) fn parse(data: &[u8]) -> IResult<&[u8], XmInstrument> {
 
     Ok((
         input,
-        XmInstrument(
+        (
             instr_header,
             sample_headers
                 .into_iter()

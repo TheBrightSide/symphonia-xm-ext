@@ -97,7 +97,7 @@ fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
         let flags = XmNoteFlags(note_or_flags);
 
         let (input, (note, instrument_index, volume_column)) = tuple((
-            nom::combinator::cond(flags.note_follows(), note::parse_xm_note)
+            nom::combinator::cond(flags.note_follows(), note::parse_xm_signal)
                 .map(|e| e.unwrap_or(note::XmSignal::NoNote)),
             nom::combinator::cond(flags.instrument_follows(), nom::number::complete::u8),
             nom::combinator::cond(
@@ -122,7 +122,7 @@ fn parse_slot(data: &[u8]) -> IResult<&[u8], XmPatternSlot> {
         ))
     } else {
         let (input, (note, instrument_index, volume_column, effect)) = tuple((
-            note::parse_xm_note,
+            note::parse_xm_signal,
             nom::number::complete::u8,
             effect::parse_volume_column,
             effect::parse_effect(true, true),

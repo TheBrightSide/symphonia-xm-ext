@@ -4,18 +4,18 @@ fn note_to_raw(note: XmNote) -> u8 {
     let XmNote { tone, octave } = note;
 
     let tone_raw: u8 = match tone {
-        XmTone::C => 1,
-        XmTone::CS => 2,
-        XmTone::D => 3,
-        XmTone::DS => 4,
-        XmTone::E => 5,
-        XmTone::F => 6,
-        XmTone::FS => 7,
-        XmTone::G => 8,
-        XmTone::GS => 9,
-        XmTone::A => 10,
-        XmTone::AS => 11,
-        XmTone::B => 12,
+        XmTone::C => 0,
+        XmTone::CS => 1,
+        XmTone::D => 2,
+        XmTone::DS => 3,
+        XmTone::E => 4,
+        XmTone::F => 5,
+        XmTone::FS => 6,
+        XmTone::G => 7,
+        XmTone::GS => 8,
+        XmTone::A => 9,
+        XmTone::AS => 10,
+        XmTone::B => 11,
     };
 
     let note = tone_raw + (octave.clamp(1, XM_MAX_OCTAVE) - 1) * XM_TONE_COUNT;

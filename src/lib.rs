@@ -10,7 +10,7 @@ pub mod pattern;
 pub mod interpolation;
 pub mod frequency;
 
-// pub mod context;
+pub mod context;
 
 #[cfg(test)]
 mod tests;

@@ -1,17 +1,14 @@
-use std::cell::RefCell;
-
-use log::warn;
+use std::rc::Rc;
 
 use crate::{
-    frequency::{FrequencyCalculator, XmFrequencyType},
-    instrument::{XmInstrumentHeader, XmSample},
-    XmModule,
+    frequency::{FrequencyCalculator, XmFrequencyType}, header::XmHeader, instrument::{XmInstrumentHeader, XmSample}, note::XmNote, XmModule, XmPattern
 };
 
+pub struct XmInstrumentRef(Rc<XmInstrumentHeader>, Vec<Rc<XmSample>>);
+
 #[derive(Clone)]
-pub struct XmInstrumentState<'a> {
-    instrument: &'a XmInstrumentHeader,
-    sample: &'a XmSample,
+pub struct XmInstrumentState {
+    sample: Rc<XmSample>,
     sample_position: f32,
 
     step: f32,
@@ -19,34 +16,38 @@ pub struct XmInstrumentState<'a> {
 }
 
 pub struct XmStepSpec {
-    note: crate::note::XmNote,
-    sample_rate: u32,
-    frequency_type: XmFrequencyType,
-    finetune: i8,
+    pub note: crate::note::XmNote,
+    pub sample_rate: u32,
+    pub frequency_type: XmFrequencyType,
+    pub finetune: i8,
 }
 
 #[derive(Clone)]
-pub struct XmChannelContext<'a> {
+pub struct XmChannelContext {
     /// if it is `None`, no instrument is being executed/played
     /// everytime this is `Some(_)` it will get read and played
-    instrument_state: RefCell<Option<XmInstrumentState<'a>>>,
+    instrument_state: Option<XmInstrumentState>,
 
     volume: f32,
     panning: f32,
 }
 
-impl<'a> Default for XmChannelContext<'a> {
+impl<'a> Default for XmChannelContext {
     fn default() -> Self {
         Self {
-            instrument_state: RefCell::new(None),
+            instrument_state: None,
             volume: 1.0,
             panning: 0.5,
         }
     }
 }
 
-pub struct XmPlaybackContext<'a> {
-    module: XmModule,
+pub struct XmPlaybackContext {
+    module_header: XmHeader,
+    instruments: Vec<XmInstrumentRef>,
+    patterns: Vec<Rc<XmPattern>>,
+    order_table: Vec<Rc<XmPattern>>,
+
     sample_rate: u32,
 
     tempo: u16,
@@ -64,40 +65,73 @@ pub struct XmPlaybackContext<'a> {
     extra_ticks: u16,
 
     // if a channel is None, then it is muted
-    channels: Vec<XmChannelContext<'a>>,
+    channels: Vec<XmChannelContext>,
 }
 
-impl<'a> XmInstrumentState<'a> {
-    fn new(
+impl XmInstrumentRef {
+    pub fn header(&self) -> Rc<XmInstrumentHeader> {
+        self.0.clone()
+    }
+
+    pub fn sample_for_note(&self, note: crate::note::XmNote) -> Option<Rc<XmSample>> {
+        let Some(ref sample_opts) = self.0.sample_opts else {
+            return None;
+        };
+
+        let note_index = note.index();
+
+        let Some(sample_index) = sample_opts
+            .sample_keymap_assignments
+            .get(note_index as usize)
+            .copied()
+        else {
+            return None;
+        };
+
+        self.1.get(sample_index as usize).cloned()
+    }
+}
+
+impl XmInstrumentState {
+    pub fn new(
         step_spec: &XmStepSpec,
-        instrument: &'a XmInstrumentHeader,
-        sample: &'a XmSample,
+        sample: Rc<XmSample>,
     ) -> Self {
+        let sample_finetune = sample.header().finetune;
+        let sample_relative_note = sample.header().relative_note_num;
+
         Self {
-            instrument,
             sample,
             sample_position: 0.0,
-            step: Self::calc_step(step_spec),
+            step: Self::calc_step(step_spec, sample_relative_note, sample_finetune),
             ping: true,
         }
     }
 
-    fn calc_step(step_spec: &XmStepSpec) -> f32 {
+    fn calc_step(step_spec: &XmStepSpec, sample_relative_note: XmNote, sample_finetune: i8) -> f32 {
+        let add_cents = |orig_freq: f32, semitones: f32| orig_freq * (2f32).powf(semitones / 12.);
+        let finetune = ((sample_finetune as f32) / 128.) + 
+                    ((step_spec.finetune as f32) / 128.);
+        // let sample_relative_note = ((sample_relative_note.index() as i16) - 128);
+        // let note = (step_spec.note.index() as i16) + sample_relative_note as i16;
+
         match step_spec.frequency_type {
             XmFrequencyType::Linear => {
-                crate::frequency::Linear::frequency(crate::frequency::Linear::period(
-                    step_spec.note,
-                )) / step_spec.sample_rate as f32
+                add_cents(
+                    crate::frequency::Linear::frequency(crate::frequency::Linear::period(
+                        step_spec.note,
+                    ))
+                , finetune + 6.) / step_spec.sample_rate as f32
             }
             XmFrequencyType::Amiga => todo!(),
         }
     }
 
-    fn set_step(&mut self, step_spec: &XmStepSpec) {
-        self.step = Self::calc_step(step_spec);
+    pub fn set_step(&mut self, step_spec: &XmStepSpec) {
+        self.step = Self::calc_step(step_spec, self.sample.header().relative_note_num, self.sample.header().finetune);
     }
 
-    fn advance(&mut self) -> bool {
+    pub fn advance(&mut self) -> bool {
         if self.sample.data().len() == 0 {
             return true;
         }
@@ -149,7 +183,7 @@ impl<'a> XmInstrumentState<'a> {
         }
     }
 
-    fn sample(&self) -> f32 {
+    pub fn sample(&self) -> f32 {
         if self.sample.data().len() == 0 {
             // nothing to generate since there is no sample
             return 0.0;
@@ -184,16 +218,13 @@ impl<'a> XmInstrumentState<'a> {
     }
 }
 
-impl<'a> XmChannelContext<'a> {
-    fn set_instrument(
-        &self,
+impl XmChannelContext {
+    pub fn set_instrument(
+        &mut self,
         step_spec: &XmStepSpec,
-        instrument: &'a XmInstrumentHeader,
-        sample: &'a XmSample,
+        sample: Rc<XmSample>,
     ) {
-        self.instrument_state
-            .borrow_mut()
-            .replace(XmInstrumentState::<'a>::new(step_spec, instrument, sample));
+        self.instrument_state.replace(XmInstrumentState::new(step_spec, sample));
     }
 
     fn volume(sample: f32, volume: f32) -> f32 {
@@ -209,22 +240,20 @@ impl<'a> XmChannelContext<'a> {
         (sample * left_vol, sample * right_vol)
     }
 
-    fn advance(&mut self) {
-        let mut instrument_state = self.instrument_state.borrow_mut();
-        let is_instrument_done = if let Some(ref mut instr_state) = *instrument_state {
+    pub fn advance(&mut self) {
+        let is_instrument_done = if let Some(ref mut instr_state) = self.instrument_state {
             instr_state.advance()
         } else {
             false
         };
 
         if is_instrument_done {
-            self.instrument_state.borrow_mut().take();
+            self.instrument_state.take();
         }
     }
 
-    fn sample(&self) -> (f32, f32) {
-        let instrument_state = self.instrument_state.borrow();
-        if let Some(ref instr_state) = *instrument_state {
+    pub fn sample(&self) -> (f32, f32) {
+        if let Some(ref instr_state) = self.instrument_state {
             Self::pan(
                 Self::volume(instr_state.sample(), self.volume),
                 self.panning,
@@ -235,29 +264,51 @@ impl<'a> XmChannelContext<'a> {
     }
 }
 
-impl<'a> XmPlaybackContext<'a> {
-    pub fn new(module: XmModule, sample_rate: u32) -> Self {
-        Self {
+impl XmPlaybackContext {
+    // TODO: convert Option<Self> to an error type for XmPlaybackContext
+    pub fn new(module: XmModule, sample_rate: u32) -> Option<Self> {
+        let module_header = module.header;
+        let instruments = module.instruments
+            .into_iter()
+            .map(|e|
+                XmInstrumentRef(Rc::new(e.0), e.1.into_iter().map(|s| Rc::new(s)).collect::<Vec<_>>()))
+            .collect::<Vec<_>>();
+        let patterns = module.patterns.into_iter().map(|e| Rc::new(e)).collect::<Vec<_>>();
+        let Some(order_table) = module.pattern_order_table
+            .into_iter()
+            .map(|e| patterns.get(e as usize).cloned())
+            .collect::<Option<Vec<_>>>() else {
+                return None;
+            };
+
+        let tempo = module_header.default_tempo;
+        let bpm = module_header.default_bpm;
+        let channels_num = module_header.channels_num;
+
+        Some(Self {
+            module_header,
+            instruments,
+            patterns,
+            order_table,
+
             sample_rate,
 
-            tempo: module.header.default_tempo,
-            bpm: module.header.default_bpm,
+            tempo,
+            bpm,
             volume: 1.0,
 
             current_order: 0,
             current_row: 0,
             current_tick: 0,
-            left_samples_in_tick: Self::samples_in_tick(sample_rate, module.header.default_bpm),
+            left_samples_in_tick: Self::samples_in_tick(sample_rate, bpm),
 
             jump_dest: None,
             jump_row: None,
 
             extra_ticks: 0,
 
-            channels: vec![XmChannelContext::default(); module.header.channels_num.into()],
-
-            module,
-        }
+            channels: vec![XmChannelContext::default(); channels_num.into()],
+        })
     }
 
     fn samples_in_tick(sample_rate: u32, bpm: u16) -> f32 {
@@ -265,20 +316,11 @@ impl<'a> XmPlaybackContext<'a> {
         sample_rate as f32 / bpm as f32 * 0.4
     }
 
-    fn advance_row(&'a self) {
+    fn advance_row(&mut self) {
         // TODO: process pattern effects here
         // ...
 
-        let Some(pattern_index) = self
-            .module
-            .pattern_order_table
-            .get(self.current_order)
-            .cloned()
-        else {
-            return;
-        };
-
-        let Some(pattern) = self.module.patterns.get(pattern_index as usize) else {
+        let Some(pattern) = self.order_table.get(self.current_order) else {
             return;
         };
 
@@ -286,10 +328,10 @@ impl<'a> XmPlaybackContext<'a> {
             return;
         };
 
-        for (slot, channel) in pattern_row.iter().zip(self.channels.iter()) {
+        for (slot, channel) in pattern_row.iter().zip(self.channels.iter_mut()) {
             let instrument = {
                 if let Some(instrument_index) = slot.instrument_index {
-                    if let Some(instrument) = self.module.instruments.get(instrument_index as usize)
+                    if let Some(instrument) = self.instruments.get(instrument_index as usize)
                     {
                         instrument
                     } else {
@@ -315,11 +357,11 @@ impl<'a> XmPlaybackContext<'a> {
                 frequency_type: XmFrequencyType::Linear,
                 finetune: sample.header().finetune,
             };
-            channel.set_instrument(&step_spec, instrument.header(), sample);
+            channel.set_instrument(&step_spec, sample);
         }
     }
 
-    fn advance_tick(&'a mut self) {
+    fn advance_tick(&mut self) {
         if self.current_tick == 0 {
             self.advance_row()
         }
@@ -339,7 +381,7 @@ impl<'a> XmPlaybackContext<'a> {
         todo!();
     }
 
-    pub fn advance(&'a mut self) {
+    pub fn advance(&mut self) {
         if self.left_samples_in_tick <= 0.0 {
             self.advance_tick();
         }
@@ -351,7 +393,7 @@ impl<'a> XmPlaybackContext<'a> {
         // self.left_samples_in_tick -= 1.0;
     }
 
-    fn sample(&self) -> (f32, f32) {
+    pub fn sample(&self) -> (f32, f32) {
         let mut out_left = 0.0f32;
         let mut out_right = 0.0f32;
 

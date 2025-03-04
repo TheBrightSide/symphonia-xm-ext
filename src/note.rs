@@ -112,12 +112,15 @@ pub enum XmNoteRaw {
 }
 
 pub const XM_TONE_COUNT: u8 = 12;
-pub const XM_MAX_OCTAVE: u8 = 8;
+pub const XM_MAX_OCTAVE: u8 = 7;
 pub const XM_NO_NOTE: u8 = XmNoteRaw::NoNote as u8;
 pub const XM_NOTE_OFF: u8 = XmNoteRaw::NoteOff as u8;
 
+pub const XM_SMALLEST_RELATIVE_NOTE: i8 = -48;
+pub const XM_MAX_OCTAVE_RELATIVE_NOTE: u8 = 9;
+
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub enum XmTone {
     C,
     CS,
@@ -152,7 +155,7 @@ impl std::fmt::Display for XmTone {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct XmNote {
     pub tone: XmTone,
     pub octave: u8,
@@ -169,6 +172,10 @@ impl XmNote {
     pub fn index(&self) -> u8 {
         self.octave * XM_TONE_COUNT + self.tone as u8
     }
+
+    // pub fn from_relative_note_num(relative_note_num: i8) -> Self {
+    //     return 
+    // }
 }
 
 impl Default for XmSignal {
@@ -204,27 +211,16 @@ impl std::fmt::Display for XmSignal {
     }
 }
 
-pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmSignal> {
-    let (input, value) = nom::number::complete::u8(input)?;
+pub fn parse_xm_note(input: u8, is_relative_note: bool) -> Option<XmNote> {
+    let octave = input / XM_TONE_COUNT;
 
-    match value {
-        XM_NOTE_OFF => return Ok((input, XmSignal::NoteOff)),
-        XM_NO_NOTE => return Ok((input, XmSignal::NoNote)),
-        _ => {}
+    if is_relative_note && octave > XM_MAX_OCTAVE_RELATIVE_NOTE {
+        return None;
+    } else if !is_relative_note && octave > XM_MAX_OCTAVE {
+        return None;
     }
 
-    // we subtract 1, discarding the NoNote scenario, since we already checked for that
-    let value = value - 1;
-    let octave = value / XM_TONE_COUNT;
-
-    if octave > XM_MAX_OCTAVE {
-        return Err(nom::Err::Error(nom::error::Error::from_error_kind(
-            input,
-            nom::error::ErrorKind::Verify,
-        )));
-    }
-
-    let tone_raw = value as u16 - (octave as u16 * XM_TONE_COUNT as u16);
+    let tone_raw = input as u16 - (octave as u16 * XM_TONE_COUNT as u16);
     let tone = match tone_raw {
         0 => XmTone::C,
         1 => XmTone::CS,
@@ -239,18 +235,43 @@ pub fn parse_xm_note(input: &[u8]) -> IResult<&[u8], XmSignal> {
         10 => XmTone::AS,
         11 => XmTone::B,
         _ => {
-            return Err(nom::Err::Error(nom::error::Error::from_error_kind(
-                input,
-                nom::error::ErrorKind::Verify,
-            )))
+            return None;
         }
     };
 
-    Ok((
-        input,
-        XmSignal::Note(XmNote {
-            tone,
-            octave: octave + 1,
-        }),
-    ))
+    Some(XmNote { tone, octave: octave + 1 })
+}
+
+pub fn parse_xm_signal(input: &[u8]) -> IResult<&[u8], XmSignal> {
+    let (input, value) = nom::number::complete::u8(input)?;
+
+    match value {
+        XM_NOTE_OFF => return Ok((input, XmSignal::NoteOff)),
+        XM_NO_NOTE => return Ok((input, XmSignal::NoNote)),
+        _ => {}
+    }
+
+    // we subtract 1, discarding the NoNote scenario, since we already checked for that
+    let value = value - 1;
+
+    match parse_xm_note(value, false) {
+        Some(d) => Ok((input, XmSignal::Note(d))),
+        _ => Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            input,
+            nom::error::ErrorKind::Verify,
+        ))),
+    }
+}
+
+pub fn parse_relative_note_num(input: &[u8]) -> IResult<&[u8], XmNote> {
+    let (input, value) = nom::number::complete::i8(input)?;
+    let converted = ((value as i16) + XM_SMALLEST_RELATIVE_NOTE.abs() as i16) as u8;
+
+    match parse_xm_note(converted, true) {
+        None => Err(nom::Err::Error(nom::error::Error::from_error_kind(
+            input,
+            nom::error::ErrorKind::Verify,
+        ))),
+        Some(d) => Ok((input, d))
+    }
 }
